@@ -1,13 +1,105 @@
-# Milestone 1: only the exploration service. The full stack (section 6.1 of PLAN.md)
-# is added from Milestone 2 on.
+# Services and profiles from PLAN.md section 6.1.
+#   core   long-running stores: lake (SeaweedFS S3), elasticsearch. `api` joins in Milestone 8.
+#   tools  one-shot containers started with `docker compose run`: build, cli, duckdb.
+# The orchestration (Dagster) and dev (web-dev) profiles join in later milestones.
 name: lv-register
 
+x-env: &env
+  env_file:
+    - path: .env
+      required: false
+
 services:
+  lake:
+    profiles: ["core"]
+    image: chrislusf/seaweedfs:4.51
+    command:
+      - server
+      - -dir=/data
+      - -ip=lake
+      - -ip.bind=0.0.0.0
+      - -master.volumeSizeLimitMB=1024
+      - -volume.max=0
+      - -filer
+      - -s3
+      - -s3.port=8333
+      - -s3.config=/etc/seaweedfs/s3.json
+    volumes:
+      - lake-data:/data
+      - ./docker/seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
+    ports:
+      - "127.0.0.1:8333:8333"   # S3 API
+      - "127.0.0.1:8888:8888"   # filer file browser
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  lake-init:
+    profiles: ["core"]
+    image: chrislusf/seaweedfs:4.51
+    entrypoint: ["/bin/sh", "/init-buckets.sh"]
+    volumes:
+      - ./docker/seaweedfs/init-buckets.sh:/init-buckets.sh:ro
+    depends_on:
+      lake:
+        condition: service_healthy
+    restart: "no"
+
+  elasticsearch:
+    profiles: ["core"]
+    image: elasticsearch:8.19.23
+    <<: *env
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms${ES_HEAP:-512m} -Xmx${ES_HEAP:-512m}"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - "127.0.0.1:9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
+  build:
+    profiles: ["tools"]
+    build:
+      context: docker/builder
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: lv-register/build:dev
+    volumes:
+      - .:/work
+      - gradle-cache:/home/builder/.gradle
+
+  cli:
+    profiles: ["tools"]
+    build:
+      context: .
+      target: cli
+    image: lv-register/cli:dev
+    <<: *env
+    depends_on:
+      lake-init:
+        condition: service_completed_successfully
+      elasticsearch:
+        condition: service_healthy
+
   duckdb:
-    profiles: ["dev"]
+    profiles: ["tools"]
     build:
       context: docker/duckdb
     image: lv-register/duckdb:1.4.5
+    <<: *env
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     working_dir: /work
     volumes:
@@ -15,3 +107,8 @@ services:
       - ./scripts:/work/scripts:ro
     stdin_open: true
     tty: true
+
+volumes:
+  lake-data:
+  es-data:
+  gradle-cache:

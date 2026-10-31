@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "lv-dev",
+      "credentials": [
+        { "accessKey": "lvdev", "secretKey": "lvdev-local-only-secret" }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
