@@ -1,0 +1,16 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gradle build and tests (build container)
+        run: make build
+      - name: Build the cli image
+        run: docker build --target cli -t lv-register/cli:ci .
