@@ -476,14 +476,14 @@ Rules:
 ## 15. Milestones
 
 ### Milestone 1: Source exploration
-- [ ] Minimal `docker-compose.yml` with the `duckdb` service for exploring the files; no
+- [x] Minimal `docker-compose.yml` with the `duckdb` service for exploring the files; no
       tools installed on the host
-- [ ] Download one capture of every UR file
-- [ ] Record columns, types, value sets, row counts, encoding, delimiters, quirks in
+- [x] Download one capture of every UR file
+- [x] Record columns, types, value sets, row counts, encoding, delimiters, quirks in
       `docs/source-assessment.md`
-- [ ] Find out when UR publishes updates (sets the weekly schedule time)
-- [ ] Measure file sizes as CSV and as Parquet (sets the retention defaults)
-- [ ] Map each field to a North Data feature (base data, history, representatives,
+- [x] Find out when UR publishes updates (sets the weekly schedule time)
+- [x] Measure file sizes as CSV and as Parquet (sets the retention defaults)
+- [x] Map each field to a North Data feature (base data, history, representatives,
       shareholders, person networks, segment codes)
 - [ ] Decide which files are in MVP
 - [ ] STOP and show me the assessment before continuing
