@@ -7,6 +7,7 @@ import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
 import lvregister.diff.DiffStep;
+import lvregister.index.IndexStep;
 import lvregister.ingest.CkanCatalog;
 import lvregister.ingest.Downloader;
 import lvregister.ingest.Http;
@@ -15,6 +16,11 @@ import lvregister.lake.DuckDbSettings;
 import lvregister.lake.LakeReader;
 import lvregister.lake.LakeWriter;
 import lvregister.lake.SnapshotLoader;
+import lvregister.quality.QualityReport;
+import lvregister.quality.QualityStep;
+import lvregister.quality.Thresholds;
+import lvregister.serving.postgres.PostgresServing;
+import lvregister.serving.postgres.PostgresSettings;
 import lvregister.storage.ObjectStore;
 import lvregister.storage.S3ObjectStore;
 import lvregister.storage.S3Settings;
@@ -32,7 +38,7 @@ final class Wiring {
 
     private Wiring() {}
 
-    static Steps production(Map<String, String> env) {
+    static Steps production(Map<String, String> env, RunContext context) {
         Map<StepName, Step> steps = new EnumMap<>(Steps.notImplemented().byName());
         steps.put(StepName.DOWNLOAD, date -> {
             try (S3Client s3 = S3ObjectStore.client(S3Settings.fromEnvironment(env))) {
@@ -63,7 +69,44 @@ final class Wiring {
                         result.previous().map(Object::toString).orElse("nothing (baseline)"));
             }
         });
+        steps.put(StepName.QUALITY, date -> {
+            S3Settings settings = S3Settings.fromEnvironment(env);
+            try (S3Client s3 = S3ObjectStore.client(settings);
+                    DuckDb db = DuckDb.open(DuckDbSettings.fromEnvironment(env), Optional.of(settings))) {
+                ObjectStore raw = raw(env, s3);
+                ObjectStore lake = lake(env, s3);
+                Map<String, ObjectStore> buckets = Map.of(
+                        bucket(env, "S3_BUCKET_RAW", "lv-raw"), raw,
+                        bucket(env, "S3_BUCKET_LAKE", "lv-lake"), lake,
+                        bucket(env, "S3_BUCKET_MARTS", "lv-marts"), new S3ObjectStore(s3, bucket(env, "S3_BUCKET_MARTS", "lv-marts")));
+                QualityReport report = new QualityStep(db, raw, lake, buckets, Thresholds.fromEnvironment(env), Clock.systemUTC())
+                        .run(date, context.runId(), context.dagsterRunId());
+                LOG.info("quality: {}", report.status());
+            }
+        });
+        steps.put(StepName.INDEX, date -> {
+            S3Settings settings = S3Settings.fromEnvironment(env);
+            try (S3Client s3 = S3ObjectStore.client(settings);
+                    DuckDb db = DuckDb.open(DuckDbSettings.fromEnvironment(env), Optional.of(settings));
+                    var serving = servingStore(env)) {
+                ObjectStore lake = lake(env, s3);
+                new IndexStep(lake, new SnapshotLoader(new LakeReader(db, lake)), serving).run(date);
+            }
+        });
         return new Steps(steps);
+    }
+
+    /** The serving backend behind the port, chosen by {@code SERVING_BACKEND} (PLAN.md section 4). */
+    static PostgresServing servingStore(Map<String, String> env) {
+        String backend = env.getOrDefault("SERVING_BACKEND", "postgres");
+        if (!backend.equals("postgres")) {
+            throw new IllegalArgumentException("unknown SERVING_BACKEND '" + backend + "': only postgres is implemented");
+        }
+        return PostgresServing.connect(PostgresSettings.fromEnvironment(env), 2);
+    }
+
+    private static String bucket(Map<String, String> env, String variable, String fallback) {
+        return env.getOrDefault(variable, fallback);
     }
 
     private static ObjectStore raw(Map<String, String> env, S3Client s3) {

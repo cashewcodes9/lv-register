@@ -24,6 +24,9 @@ dependencies {
     runtimeOnly(libs.logstash.encoder)
 
     testImplementation(libs.archunit)
+    testImplementation(testFixtures(project(":storage")))
+    testImplementation(testFixtures(project(":diff")))
+    testImplementation(libs.testcontainers.postgresql)
     testImplementation(platform(libs.awssdk.bom))
     testImplementation(libs.awssdk.s3)
     testImplementation(libs.logback.classic)

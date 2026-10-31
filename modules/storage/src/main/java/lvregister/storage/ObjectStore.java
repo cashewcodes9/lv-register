@@ -44,6 +44,9 @@ public interface ObjectStore {
     /** Deletes the object; does nothing when it does not exist. */
     void delete(String key) throws IOException;
 
+    /** Total size in bytes of the objects whose key starts with the prefix. */
+    long totalSize(String prefix) throws IOException;
+
     /** Keys that start with the prefix, sorted. */
     List<String> list(String prefix) throws IOException;
 

@@ -85,6 +85,15 @@ public final class LocalDirectoryObjectStore implements ObjectStore {
     }
 
     @Override
+    public long totalSize(String prefix) throws IOException {
+        long total = 0;
+        for (String key : list(prefix)) {
+            total += Files.size(path(key));
+        }
+        return total;
+    }
+
+    @Override
     public List<String> list(String prefix) throws IOException {
         Keys.checkPrefix(prefix);
         if (!Files.isDirectory(root)) {

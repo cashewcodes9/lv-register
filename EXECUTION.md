@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-11-01 · **Current milestone:** 5 (not started); 4 has two open real-data items
+**Last updated:** 2026-11-01 · **Current milestone:** 6 (not started); 4 has two open real-data items
 
 ## Status
 
@@ -15,7 +15,8 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 2. Project setup + domain | done 2026-10-31: `make build` green from a clean clone (3m 35s, cold cache) |
 | 3. Storage + ingest + lake + normalize | done 2026-10-31, merged into `dev` (PR #1, CI green) |
 | 4. Diff + events | code merged into `dev` 2026-11-01 (PR #2, CI green); open: a capture a few days later, spot-check 5 events |
-| 5–10 | not started |
+| 5. Quality + index | done 2026-11-01 on `milestone/5-quality-index`, PR into `dev` |
+| 6–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -118,29 +119,57 @@ to `main` and `dev` and on PRs into either. The `gh` token now has the `workflow
 
 ## Milestone 4: still open (merged early, owner's choice 2026-11-01)
 
-1. Capture again a few days after 2026-11-01 (after 22:00 UTC, so the Riga date is right):
-   `docker compose --profile core run --rm cli download --date D`, then `lake` and `diff`.
-   A weekday export should give many more events.
+The owner wants one week of data, not daily captures (2026-11-01): daily captures only if a
+week turns out to be too little.
+1. Capture on **Monday 2026-11-09** (after Sunday 2026-11-08 22:00 UTC, so the Riga date is
+   right), then diff against 2026-11-01:
+   `for s in download lake diff quality index; do docker compose --profile core run --rm cli $s --date 2026-11-09; done`
 2. Pick 5 events of different types (company-level ones: name, address, status, registered,
-   terminated) and spot-check them on info.ur.gov.lv. The portal is a JavaScript app: the
-   owner checks in a browser, or Claude uses a browser tool. Tick the two PLAN.md boxes.
+   terminated) and give them to the owner to check on info.ur.gov.lv (a JavaScript app; or use
+   a browser tool). Then tick the two PLAN.md boxes.
 3. Check finding 4.4 (role ids stable?) once a capture has added roles.
+Already given to the owner: the 4 events of 2026-11-01 (40008002194, 40008180344, 40008363948:
+board member removed; 47404003378: farm owner removed).
 
-## Milestone 5: next steps, in order
+## What exists (Milestone 5)
 
-0. `git switch dev && git pull && git switch -c milestone/5-quality-index`.
-1. Read PLAN.md section 11 and docs/architecture.md "Serving".
-2. `quality`: run record and quality report from `SnapshotLoader.Loaded` counts, the diff
-   result, the manifest and bucket sizes; `s3://lv-lake/reports/date=D/report.json`.
-   Avoid loading the snapshots twice (diff and quality in one run): decide with the owner
-   whether diff writes the normalize counts, or quality re-reads them.
-3. `serving` port + contract tests, `serving-postgres` with Flyway, indexer through the port.
-4. Test: no person data in CLI logs on a fixture run.
+- `lake/CaptureCounts`: the diff step now loads the current snapshot on every run (also the
+  baseline) and writes `reports/date=D/normalize.json` (counts per file, snapshot figures).
+- `quality`: `QualityReport` (JSON, schema version 1), `ReportBuilder` (pure, warnings),
+  `Thresholds` (`QUALITY_*`, `STORAGE_WARN_GB`), `RequiredColumns`, `QualityStep` (row counts
+  and NULL counts through DuckDB, bucket sizes through `ObjectStore.totalSize`, FAILED report
+  when an input is missing). Legacy reorganization codes have their own rule
+  `reorganizations.legacy_regcode`, ignored by the drop-share warning.
+- `serving`: `CompanyView` (+ Address/Money/Role/Party views), `EventView`, `RunView`,
+  `SearchHit`, `Page`, `ServingWriter`, `ServingQueries`, `Views` (domain → views);
+  `ServingContract` in test fixtures (13 tests).
+- `serving-postgres`: `PostgresServing` (JDBC, Hikari, Flyway `V1__serving_schema.sql`),
+  `PostgresSettings` (`SERVING_*`). Passes the contract against `postgres:18.6-alpine3.24`.
+- `index`: `IndexStep` (refuses without a quality report or with a FAILED one; writes the run
+  last).
+- `cli`: `quality` and `index` wired; `SERVING_BACKEND=postgres`; one `RunContext` for steps
+  and logs. `PipelineLogsTest`: the five steps for two synthetic captures against SeaweedFS,
+  PostgreSQL and a fake CKAN; no person names or masked codes in any JSON log line.
+- ArchUnit serving rules no longer allow an empty selection; checked by adding a violation.
+- Real data: both captures have normalize counts, quality reports (OK, 0 warnings) and are
+  indexed. Index 2026-10-31: 489,963 companies in 3.5 min; 2026-11-01: 4 written, 489,959
+  unchanged. Peak cli 2.2 GB, postgres 236 MB; database 600 MB. Search "rigas udens" →
+  `SIA "Rīgas ūdens"` first, 1.6 s cold.
+- The `run` command still fails at `prune` (not implemented; retention is section 6.2, planned
+  with Dagster in Milestone 7).
 
-Milestone 5 (serving), for later: the design is in docs/architecture.md "Serving". Write the
-contract suite in `serving` testFixtures first, then the Postgres adapter against it with a
-PostgreSQL Testcontainer (same image tag as compose). `unaccent()` is only STABLE: wrap it in an
-IMMUTABLE SQL function for the generated search column.
+## Milestone 6: next steps, in order
+
+0. `git switch dev && git pull && git switch -c milestone/6-dbt`.
+1. Read PLAN.md Milestone 6, sections 9 and 10, and docs/architecture.md "dbt". Ask the owner
+   before choosing: the dbt container image and the dbt-duckdb version (must work with DuckDB
+   1.4.x, no AVX), and where dbt reads the events (JSON Lines in the lake).
+2. dbt project in `transform/` with sources over the lake (Parquet) and events, staging and
+   intermediate models per MVP file, marts as Parquet in `s3://lv-marts`.
+3. SQL diff model and the parity test against the Java events; singular tests; exposures;
+   `make dbt-build`, `make dbt-docs`.
+4. The value feature (section 10, mass-registration addresses) as a mart; extend the serving
+   port with stats and features (contract tests first), load them in the index step.
 
 ## Pinned versions
 
@@ -154,14 +183,15 @@ IMMUTABLE SQL function for the generated search column.
 | logstash-logback-encoder | 9.0 | uses Jackson 3 (`tools.jackson`), as the plan requires |
 | Jackson | 3.2.4 (`tools.jackson`) | manifest and CKAN JSON; records, `Optional` and `java.time` work without extra modules |
 | JUnit / AssertJ / ArchUnit | 6.1.3 / 3.27.7 / 1.5.1 | ArchUnit core artifact with plain `@Test` (no `archunit-junit5` engine, to avoid JUnit 6 engine issues) |
-| jqwik | 1.10.x | Milestone 4; check JUnit 6 compatibility |
 | AWS SDK v2 | 2.57.8 | only as the S3 protocol client for SeaweedFS; `url-connection-client`, Apache and Netty clients excluded; checksums `WHEN_REQUIRED` |
 | Testcontainers | 2.0.5 | core module only, containers started in `@BeforeAll` (no JUnit extension, to stay clear of JUnit 6 issues) |
 | DuckDB httpfs extension | 1.4.5, linux_amd64 | baked into the cli image by checksum (`Dockerfile`, stage `duckdb-extensions`); tests download it at run time |
 | FastCSV | dropped | DuckDB is the only CSV parser (owner decision 2026-10-31) |
 | SeaweedFS | 4.51 | |
 | PostgreSQL image | 18.6-alpine3.24 | 19 is still RC (2026-10-31) |
-| PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime |
+| PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime; works with PostgreSQL 18.6 |
+| testcontainers-postgresql | 2.0.5 | `org.testcontainers.postgresql.PostgreSQLContainer` |
+| jqwik | 1.10.2 | works on JUnit 6 (checked) |
 
 Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 `search.maven.org` index is stale.
@@ -217,3 +247,7 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | Termination rule taken literally: a company that becomes closed gets only `Terminated` (no StatusChanged, no role events) |
 | 2026-11-01 | Capture dates follow Europe/Riga: capture after 22:00 UTC (winter) for the next date |
 | 2026-11-01 | Milestone 4 merged with the real-data items open (owner) |
+| 2026-11-01 | Weekly data: next capture 2026-11-09, diff against 2026-11-01; daily captures only if more data is needed (owner) |
+| 2026-11-01 | diff writes the normalize counts (`normalize.json`) for quality; index loads the snapshot again (1 GB is fine, owner) |
+| 2026-11-01 | Serving read model: plain view records stored as documents; `asOf` = capture in which the state was first seen; companies only rewritten when their content hash changes |
+| 2026-11-01 | Runs keyed by run id (several runs per capture are kept) |

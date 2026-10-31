@@ -29,7 +29,6 @@ class ArchitectureTest {
                 .should().dependOnClassesThat().resideInAnyPackage(
                         "java.sql..", "javax.sql..", "org.postgresql..", "com.zaxxer..",
                         "org.flywaydb..", "co.elastic..", "org.elasticsearch..")
-                .allowEmptyShould(true)
                 .check(CLASSES);
     }
 
@@ -41,7 +40,6 @@ class ArchitectureTest {
                         "lvregister.api..",
                         "lvregister.serving.*..")
                 .should().dependOnClassesThat().resideInAPackage("lvregister.serving.*..")
-                .allowEmptyShould(true)
                 .check(CLASSES);
     }
 

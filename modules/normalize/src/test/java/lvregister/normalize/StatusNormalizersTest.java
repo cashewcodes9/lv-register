@@ -55,11 +55,13 @@ class StatusNormalizersTest {
         Cleaned<Reorganization> cleaned = StatusNormalizers.reorganizations(Stream.of(
                 row("reorganization_type", "ACQUISITION", "source_entity_regcode", A.value(), "final_entity_regcode", B.value(),
                         "registered", "2015-03-04"),
-                row("reorganization_type", "MERGER", "source_entity_regcode", A.value())));
+                row("reorganization_type", "MERGER", "source_entity_regcode", A.value()),
+                row("reorganization_type", "ACQUISITION", "source_entity_regcode", "1000123456", "final_entity_regcode", B.value())));
 
         assertThat(cleaned.rows()).extracting(Reorganization::type, Reorganization::target).containsExactly(
                 org.assertj.core.groups.Tuple.tuple("ACQUISITION", B));
-        assertThat(cleaned.droppedByRule()).containsOnly(Map.entry("reorganizations.invalid_regcode", 1L));
+        assertThat(cleaned.droppedByRule()).containsOnly(Map.entry("reorganizations.invalid_regcode", 1L),
+                Map.entry(StatusNormalizers.LEGACY_REGCODE, 1L));
         assertThat(cleaned.rows().getFirst().registered()).isNotEqualTo(Optional.empty());
         assertThat(List.of(cleaned.rows().getFirst().source())).containsExactly(A);
     }

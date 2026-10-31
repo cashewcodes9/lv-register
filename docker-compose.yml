@@ -111,7 +111,12 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-lvdev-local-only-secret}
       S3_BUCKET_RAW: ${S3_BUCKET_RAW:-lv-raw}
       S3_BUCKET_LAKE: ${S3_BUCKET_LAKE:-lv-lake}
+      S3_BUCKET_MARTS: ${S3_BUCKET_MARTS:-lv-marts}
       DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
+      SERVING_BACKEND: ${SERVING_BACKEND:-postgres}
+      SERVING_JDBC_URL: ${SERVING_JDBC_URL:-jdbc:postgresql://postgres:5432/lv_serving}
+      SERVING_DB_USER: ${SERVING_DB_USER:-lv_serving}
+      SERVING_DB_PASSWORD: ${SERVING_DB_PASSWORD:-lv-serving-local-only}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # diff holds two full snapshots in memory; serial GC suits the 1 CPU VM.
       JAVA_OPTS: ${CLI_JAVA_OPTS:--Xmx2g -XX:+UseSerialGC}

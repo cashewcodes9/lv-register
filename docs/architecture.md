@@ -89,7 +89,16 @@ Each step reads objects and writes objects for one capture, so it can run alone.
    Payloads are canonical (sorted keys, sets sorted by their JSON, plain decimals, absent values
    left out), so the same change always gives the same bytes and id. The step holds two
    snapshots in memory: the cli JVM runs with `-Xmx2g`.
-5. **quality** (`quality`): run record and quality report (PLAN.md section 11).
+5. **quality** (`quality`): reads the manifest, the Parquet row counts, the normalize counts that
+   diff wrote (`reports/date=D/normalize.json`), the events and the bucket sizes, and writes the
+   run record and quality report `reports/date=D/report.json` (PLAN.md section 11): sources,
+   rows read and kept per file next to the previous capture, drops and flags per rule, NULLs in
+   required columns, snapshot figures, events per type, storage, and warnings (`drop_share`,
+   `row_change`, `unmapped_legal_form`, `unmapped_status`, `orphan_roles`, `duplicate_regcodes`,
+   `event_spike`, `missing_from_snapshot`, `storage`). Status OK, WARN or FAILED (an input is
+   missing; the step then fails). Thresholds come from `.env` (`QUALITY_*`, `STORAGE_WARN_GB`).
+   Drops under a `*.legacy_*` rule (the old 10-digit reorganization codes) do not count for
+   the drop share.
 6. **index** (`index`): upsert companies, events, the run report, and the stats and feature
    marts into the serving store through `ServingWriter`.
 
@@ -154,8 +163,8 @@ ingest  lake  normalize  diff  quality  index  pipes  serving-postgres   api (Sp
 | `lake` | DuckDB JDBC session (httpfs), CSV → Parquet writer, row reader, `SnapshotLoader` | `domain`, `storage`, `ingest` (manifest, file list), `normalize` |
 | `normalize` | row → record functions, legal form and status mapping, person keys, snapshot assembly | `domain` |
 | `diff` | `SnapshotDiff` (pure), canonical event JSON, event ids, the diff step (I/O) | `domain`, `lake` (snapshot loading), `storage` |
-| `quality` | run record, report | `domain` |
-| `index` | indexing step: reads events, reports and marts, writes through `ServingWriter` | `domain`, `storage`, `serving` |
+| `quality` | run record and quality report (`ReportBuilder` pure, `QualityStep` I/O) | `domain`, `lake`, `diff` |
+| `index` | index step: loads the snapshot, events and report of a capture, writes through `ServingWriter` only | `domain`, `serving`, `lake`, `diff`, `quality` |
 | `serving` | port: `ServingWriter`, `ServingQueries`, read records; abstract contract test suite (test fixtures) | `domain` |
 | `serving-postgres` | adapter: plain JDBC + HikariCP, Flyway migrations, `pg_trgm` + `unaccent` search | `domain`, `serving` |
 | `pipes` | Dagster Pipes messages (materializations, metadata, check results) | `domain` |
@@ -324,21 +333,28 @@ api ──────────► ServingQueries ─┘                     
   one `@Configuration` class.
 
 **PostgreSQL adapter** (`serving-postgres`, database `lv_serving`, PostgreSQL 18): plain JDBC
-with HikariCP; schema in Flyway migrations, run by the indexer before it writes.
+with HikariCP; schema in Flyway migrations (`db/migration/serving`, history table
+`serving_schema_history`), applied by `ServingWriter.prepare()` before the index step writes.
 
 | Table | Key | Used for |
 |---|---|---|
-| `companies` | registration number | search, company page (officers and owners as `jsonb`) |
-| `events` | event id | timelines, changes feed (index on registration number and on date + type) |
-| `runs` | run id | pipeline page (report as `jsonb`) |
-| `stats` | aggregate name + key | overview page |
-| `features` | feature name + key | insights page |
+| `companies` | registration number | search, company page: the `CompanyView` document as `jsonb`, plus `name_search`, status, legal family, `as_of`, `doc_hash` |
+| `events` | event id | timelines, changes feed; payload as `json` (keeps the canonical text); indexes on registration number + date and on date + type |
+| `runs` | run id | pipeline page; the quality report as `json` |
+| `stats` | aggregate name + key | overview page (Milestone 6) |
+| `features` | feature name + key | insights page (Milestone 6) |
 
 Search: extensions `pg_trgm` and `unaccent`; a generated, unaccented, lower-case name column
 (through an `IMMUTABLE` wrapper function, because `unaccent()` itself is only `STABLE`)
-with a GIN trigram index. Queries rank by trigram similarity, so "riga" finds "Rīga" and small
-typos still match. Loads are upserts (`INSERT ... ON CONFLICT DO UPDATE`), one transaction per
-capture.
+with a GIN trigram index. Matches are a registration number, a substring (`LIKE`, wildcards in
+the query escaped) or trigram similarity; ranked by similarity, an exact registration number
+first. "riga udens" finds `SIA "Rīgas ūdens"`; on the real register a cold query takes about
+1.5 s on the dev VM (the API adds a cache in Milestone 8).
+
+Loads are upserts. A company row is only written when its content hash (the document without
+`as_of`) changed and the incoming capture is not older (`as_of`), so re-indexing a capture
+writes nothing and an older capture never rolls back a newer one. On the real data the first
+capture writes 489,963 companies (3.5 min); the next one writes only the 4 that changed.
 
 **API** (`api`, read-only, under `/api`): the endpoints in PLAN.md section 13.
 - DTO records separate from domain records.
