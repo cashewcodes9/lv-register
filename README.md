@@ -14,9 +14,16 @@ on [data.gov.lv](https://data.gov.lv/dati/lv/organization/ur) under CC0, updated
 - Reference design: [Oversee](https://github.com/cashewcodes9/Oversee), the same layer
   design in Python
 
-Stack: Java 25, Gradle, Picocli, DuckDB (Parquet lake), Elasticsearch, Spring Boot (API
-only), React + TypeScript. Everything builds and runs in Docker; the host needs only Docker
-and git.
+Stack:
+- **Pipeline:** Java 25, Gradle, Picocli; DuckDB over a Parquet lake on S3-compatible
+  storage (SeaweedFS)
+- **Models and data tests:** dbt (dbt-duckdb)
+- **Orchestration:** Dagster: daily partitions, schedule, asset checks, backfills
+- **Serving:** Elasticsearch, Spring Boot API (API only), React + TypeScript
+- **Observability:** OpenTelemetry, Grafana, Prometheus, Loki, Tempo: dashboards and alerts
+  as code
+
+Everything builds and runs in Docker; the host needs only Docker and git.
 
 ## Personal data
 

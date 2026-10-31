@@ -20,3 +20,13 @@ node_modules/
 # Local config
 .env
 *.local
+
+# Python / Dagster / dbt
+.venv/
+__pycache__/
+.dagster/
+transform/target/
+transform/logs/
+transform/dbt_packages/
+*.duckdb
+*.duckdb.wal
