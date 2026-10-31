@@ -1,7 +1,10 @@
 // Object storage: one interface, an implementation for the S3-compatible store (SeaweedFS,
-// through the AWS SDK v2 as protocol client) and a
-// local-directory implementation for tests.
-plugins { id("lv.java-conventions") }
+// through the AWS SDK v2 as protocol client) and a local-directory implementation for tests.
+// Test fixtures: a SeaweedFS Testcontainer shared by the modules that test against S3.
+plugins {
+    id("lv.java-conventions")
+    `java-test-fixtures`
+}
 
 dependencies {
     api(project(":domain"))
@@ -14,6 +17,8 @@ dependencies {
     implementation(libs.awssdk.url.connection)
     implementation(libs.slf4j.api)
 
-    testImplementation(libs.testcontainers)
+    testFixturesApi(libs.testcontainers)
+    testFixturesApi(platform(libs.awssdk.bom))
+    testFixturesApi(libs.awssdk.s3)
     testRuntimeOnly(libs.logback.classic)
 }
