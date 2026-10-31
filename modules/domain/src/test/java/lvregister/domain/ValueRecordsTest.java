@@ -89,6 +89,9 @@ class ValueRecordsTest {
         var a = new Role.Shareholder(REG, PERSON, Role.ShareRegister.MEMBERS, new BigDecimal("100.00"), Optional.empty(), Optional.empty());
         var b = new Role.Shareholder(REG, PERSON, Role.ShareRegister.MEMBERS, new BigDecimal("100"), Optional.empty(), Optional.empty());
         assertThat(a).isEqualTo(b);
+        assertThat(a.shares().toPlainString()).isEqualTo("100");
+        assertThat(a.shares().scale()).isZero();
+        assertThat(new Money(new BigDecimal("2.50"), "EUR").amount().toPlainString()).isEqualTo("2.5");
     }
 
     @Test
@@ -119,9 +122,11 @@ class ValueRecordsTest {
     }
 
     @Test
-    void cleanedCopiesAndCountsDrops() {
-        var cleaned = new Cleaned<>(List.of("a"), Map.of("missing_regcode", 2L, "bad_date", 1L));
+    void cleanedCopiesAndCountsDropsAndFlags() {
+        var cleaned = new Cleaned<>(List.of("a"), Map.of("missing_regcode", 2L, "bad_date", 1L), Map.of("unmapped_legal_form", 4L));
         assertThat(cleaned.droppedTotal()).isEqualTo(3);
-        assertThatIllegalArgumentException().isThrownBy(() -> new Cleaned<>(List.of(), Map.of("x", -1L)));
+        assertThat(cleaned.flaggedTotal()).isEqualTo(4);
+        assertThatIllegalArgumentException().isThrownBy(() -> new Cleaned<>(List.of(), Map.of("x", -1L), Map.of()));
+        assertThatIllegalArgumentException().isThrownBy(() -> new Cleaned<>(List.of(), Map.of(), Map.of("x", -1L)));
     }
 }

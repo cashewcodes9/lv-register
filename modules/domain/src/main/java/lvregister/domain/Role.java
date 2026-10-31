@@ -3,6 +3,7 @@ package lvregister.domain;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.Set;
 
 /** A role of a party in one company. Role files hold the current state only, no end dates. */
 public sealed interface Role {
@@ -56,21 +57,24 @@ public sealed interface Role {
             if (shares.signum() < 0) {
                 throw new IllegalArgumentException("shares must not be negative");
             }
-            shares = shares.stripTrailingZeros();
+            shares = Decimals.canonical(shares);
         }
     }
 
-    /** Beneficial owner. Always a natural person. Nationality and residence are ISO 3166 alpha-2. */
+    /**
+     * Beneficial owner. Always a natural person. Nationalities and residence are ISO 3166
+     * alpha-2 codes; a person can have several nationalities (UR lists them as {@code LV;US}).
+     */
     record BeneficialOwner(
             RegNumber company,
             Party.NaturalPerson holder,
-            Optional<String> nationality,
+            Set<String> nationalities,
             Optional<String> residence,
             Optional<LocalDate> since) implements Role {
         public BeneficialOwner {
             Checks.notNull(company, "company");
             Checks.notNull(holder, "holder");
-            Checks.notNull(nationality, "nationality");
+            nationalities = Set.copyOf(Checks.notNull(nationalities, "nationalities"));
             Checks.notNull(residence, "residence");
             Checks.notNull(since, "since");
         }
