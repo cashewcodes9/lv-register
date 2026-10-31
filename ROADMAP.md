@@ -71,7 +71,7 @@ Thresholds start as listed and are tuned on real data.
 
 ## 3. Cloud deployment
 
-- [ ] AWS S3 instead of SeaweedFS (configuration only)
+- [ ] A hosted S3-compatible store instead of the local SeaweedFS (configuration only: `S3_ENDPOINT`)
 - [ ] Managed PostgreSQL (or managed Elasticsearch, if the adapter below is built)
 - [ ] Dagster on a VM or Kubernetes
 - [ ] Grafana Cloud instead of the local observability stack

@@ -35,8 +35,8 @@ This project re-applies the architecture of my Python project Oversee
 before starting. Keep these patterns:
 
 - Raw files cached per capture, fingerprinted with SHA-256, skipped if already processed.
-- S3-compatible object storage (SeaweedFS locally) for raw files and the lake. The same code
-  works against AWS S3 by changing configuration only.
+- S3-compatible object storage (SeaweedFS) for raw files and the lake. The code speaks the S3
+  API to the endpoint in `S3_ENDPOINT`, so another S3-compatible store is a configuration change.
 - Hive-partitioned Parquet lake: `s3://lv-lake/<file>/date=YYYY-MM-DD/<file>.parquet`,
   unfiltered, with the source SHA-256 in the Parquet key-value metadata. DuckDB reads and
   writes it through `httpfs`.
@@ -83,9 +83,9 @@ logic lives in Java.
 | CLI | Picocli (one subcommand per pipeline step, `--date` option) |
 | HTTP API | Spring Boot 4 web, Bucket4j rate limiting, Actuator, springdoc-openapi (the release line for Spring Boot 4), Caffeine cache, ProblemDetail errors |
 | JSON | Jackson 3 (`tools.jackson`, the Spring Boot 4 default), records support; the same version in pipeline modules |
-| CSV | FastCSV or Apache Commons CSV |
+| CSV | parsed only by DuckDB (`read_csv`) in the lake step; no Java CSV library. normalize reads Parquet rows |
 | HTTP client | java.net.http.HttpClient |
-| Object storage | SeaweedFS (S3 API) locally, AWS S3 compatible. Java uses AWS SDK v2 `S3Client` with endpoint override and path-style access |
+| Object storage | SeaweedFS (S3 API). Java uses the AWS SDK v2 `S3Client` as the S3 protocol client, with the required `S3_ENDPOINT` override and path-style access; no AWS services |
 | Lake | Parquet files written and queried with DuckDB 1.4.x LTS (JDBC, `httpfs` extension). Pinned to 1.4: DuckDB 2.0 binaries need AVX, which the dev VM lacks (source assessment 4.9) |
 | Events | JSON Lines per capture in S3 |
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
@@ -266,7 +266,7 @@ lv-register/
   .env.example
   modules/
     domain/       records, sealed types, no I/O, no dependencies
-    storage/      S3 object store (AWS SDK v2) and local-directory implementation
+    storage/      S3 object store for SeaweedFS (AWS SDK v2 as protocol client) and local directory
     ingest/       download, sha256 manifest, raw cache
     lake/         Parquet snapshots via DuckDB JDBC (httpfs)
     normalize/    lake rows -> domain, legal form + status mapping, dropped-row counts
@@ -369,7 +369,8 @@ Compare the previous capture (A) with the current one (B), keyed by registration
 
 ## 9. Idempotency and correctness
 
-- Raw layer: a file with the same sha256 as one already stored is skipped.
+- Raw layer: a file already in the capture's manifest (with an object of the recorded size) is
+  not downloaded again; the manifest keeps its sha256. A capture is fixed once written.
 - Lake: writing the same day again with the same source sha256 is a no-op.
 - Event ids are deterministic: `sha256(regNumber | eventType | snapshotDate | canonicalPayload)`.
   Re-running a capture writes the same ids.
@@ -517,11 +518,11 @@ Rules:
 - [x] Logback JSON logging with run id in MDC
 
 ### Milestone 3: Storage + ingest + lake + normalize
-- [ ] `storage` module: S3 object store against SeaweedFS (Testcontainers) and local directory
-- [ ] Downloader with sha256 manifest in `s3://lv-raw`, skip if unchanged, write via temp key
-- [ ] Lake writer: CSV to Parquet via DuckDB `httpfs`, source sha in metadata
-- [ ] Normalizers per file returning `Cleaned<T>`
-- [ ] Legal form and status mapping with tests
+- [x] `storage` module: S3 object store against SeaweedFS (Testcontainers) and local directory
+- [x] Downloader with sha256 manifest in `s3://lv-raw`, skip if unchanged, write via temp key
+- [x] Lake writer: CSV to Parquet via DuckDB `httpfs`, source sha in metadata
+- [x] Normalizers per file returning `Cleaned<T>`
+- [x] Legal form and status mapping with tests
 
 ### Milestone 4: Diff + events
 - [ ] Snapshot diff for all event types in section 8
@@ -536,7 +537,7 @@ Rules:
 - [ ] `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite;
       `serving-postgres`: Flyway schema for companies, events and runs (`pg_trgm`, `unaccent`)
 - [ ] Indexer with upserts through the port; Postgres adapter passes the contract tests (Testcontainers)
-- [ ] Testcontainers working from the `build` container
+- [x] Testcontainers working from the `build` container (done in Milestone 3)
 - [ ] Test: no person data in CLI logs on a fixture run
 
 ### Milestone 6: dbt

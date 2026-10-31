@@ -17,15 +17,26 @@ dependencies {
     implementation(project(":serving-postgres"))
     implementation(project(":pipes"))
     implementation(libs.picocli)
+    implementation(platform(libs.awssdk.bom))
+    implementation(libs.awssdk.s3)
     implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)
     runtimeOnly(libs.logstash.encoder)
 
     testImplementation(libs.archunit)
+    testImplementation(platform(libs.awssdk.bom))
+    testImplementation(libs.awssdk.s3)
     testImplementation(libs.logback.classic)
 }
 
 application {
     mainClass = "lvregister.cli.Main"
     applicationName = "lv-register"
+    // DuckDB loads its native library through System.load.
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
+
+// RealCaptureCheck holds a whole snapshot in memory; give it more heap when asked.
+tasks.test {
+    maxHeapSize = providers.environmentVariable("LV_TEST_HEAP").getOrElse("512m")
 }

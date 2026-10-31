@@ -24,7 +24,8 @@ import picocli.CommandLine.Option;
 public final class Main {
 
     public static void main(String[] args) {
-        System.exit(newCommandLine(Steps.notImplemented(), RunContext.fromEnvironment(System.getenv())).execute(args));
+        System.exit(newCommandLine(Wiring.production(System.getenv()), RunContext.fromEnvironment(System.getenv()))
+                .execute(args));
     }
 
     /** Builds the command line with the given wiring; used by {@link #main} and by tests. */
