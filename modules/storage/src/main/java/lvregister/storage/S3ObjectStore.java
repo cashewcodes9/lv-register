@@ -92,6 +92,14 @@ public final class S3ObjectStore implements ObjectStore {
     }
 
     @Override
+    public long totalSize(String prefix) throws IOException {
+        Keys.checkPrefix(prefix);
+        return call(() -> client.listObjectsV2Paginator(b -> b.bucket(bucket).prefix(prefix)).contents().stream()
+                .mapToLong(S3Object::size)
+                .sum());
+    }
+
+    @Override
     public List<String> list(String prefix) throws IOException {
         Keys.checkPrefix(prefix);
         return call(() -> client.listObjectsV2Paginator(b -> b.bucket(bucket).prefix(prefix)).contents().stream()

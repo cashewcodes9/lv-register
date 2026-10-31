@@ -54,6 +54,9 @@ abstract class ObjectStoreContract {
         assertThat(store().list("date=")).hasSize(3);
         assertThat(store().list("")).hasSize(4);
         assertThat(store().list("nothing/")).isEmpty();
+        assertThat(store().totalSize("date=2026-11-02/")).isEqualTo(2);
+        assertThat(store().totalSize("")).isEqualTo(4);
+        assertThat(store().totalSize("nothing/")).isZero();
     }
 
     @Test
