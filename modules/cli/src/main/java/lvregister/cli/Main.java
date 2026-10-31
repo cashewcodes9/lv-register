@@ -24,7 +24,8 @@ import picocli.CommandLine.Option;
 public final class Main {
 
     public static void main(String[] args) {
-        System.exit(newCommandLine(Wiring.production(System.getenv()), RunContext.fromEnvironment(System.getenv()))
+        RunContext context = RunContext.fromEnvironment(System.getenv());
+        System.exit(newCommandLine(Wiring.production(System.getenv(), context), context)
                 .execute(args));
     }
 
