@@ -11,6 +11,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import lvregister.domain.ObservedBetween;
 import lvregister.domain.Snapshot;
+import lvregister.lake.CaptureCounts;
 import lvregister.lake.SnapshotLoader;
 import lvregister.storage.ObjectStore;
 import org.slf4j.Logger;
@@ -18,7 +19,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * The {@code diff} step: compares a capture with the previous capture in the lake and writes
- * the events to {@code events/date=D/events.jsonl}, sorted by id. The first capture is the
+ * the events to {@code events/date=D/events.jsonl}, sorted by id, and the normalize counts of
+ * the capture to {@code reports/date=D/normalize.json}. The first capture is the
  * baseline: its events file is empty. Re-running gives byte-identical output.
  */
 public final class DiffStep {
@@ -49,6 +51,8 @@ public final class DiffStep {
         if (!captures.contains(date)) {
             throw new IllegalStateException("capture " + date + " is not in the lake: run lake first");
         }
+        SnapshotLoader.Loaded current = loader.load(date);
+        lake.putAtomically(CaptureCounts.key(date), CaptureCounts.of(current).toJson());
         Optional<LocalDate> previous = LakeCaptures.previous(captures, date);
         if (previous.isEmpty()) {
             lake.putAtomically(eventsKey(date), new byte[0]);
@@ -56,8 +60,7 @@ public final class DiffStep {
             return new Result(Optional.empty(), Map.of());
         }
         Snapshot before = loader.load(previous.get()).snapshot();
-        Snapshot after = loader.load(date).snapshot();
-        List<StoredEvent> events = EventIds.store(SnapshotDiff.diff(before, after));
+        List<StoredEvent> events = EventIds.store(SnapshotDiff.diff(before, current.snapshot()));
         lake.putAtomically(eventsKey(date), jsonLines(events));
         Map<String, Long> byType = events.stream().collect(Collectors.groupingBy(
                 e -> EventJson.type(e.event()), TreeMap::new, Collectors.counting()));

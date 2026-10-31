@@ -18,6 +18,7 @@ import lvregister.ingest.Manifest;
 import lvregister.ingest.ManifestEntry;
 import lvregister.ingest.RawLayout;
 import lvregister.ingest.SourceFile;
+import lvregister.lake.CaptureCounts;
 import lvregister.lake.DuckDb;
 import lvregister.lake.DuckDbSettings;
 import lvregister.lake.LakeReader;
@@ -112,6 +113,11 @@ class DiffStepTest {
 
         assertThat(result.previous()).isEmpty();
         assertThat(lake.read(DiffStep.eventsKey(D1))).isEmpty();
+        CaptureCounts counts = CaptureCounts.fromJson(lake.read(CaptureCounts.key(D1)));
+        assertThat(counts.companies()).isEqualTo(2);
+        assertThat(counts.files().get("register").kept()).isEqualTo(2);
+        assertThat(counts.files().get("stockholders").kept()).isEqualTo(1);
+        assertThat(counts.orphanRoles()).isEqualTo(1);
     }
 
     @Test
