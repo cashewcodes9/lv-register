@@ -19,7 +19,7 @@ public record Steps(Map<StepName, Step> byName) {
         return byName.get(name);
     }
 
-    /** Placeholder wiring until the steps are implemented (Milestones 3-7). */
+    /** Placeholder for steps that are not implemented yet (Milestones 4-7). */
     public static Steps notImplemented() {
         Map<StepName, Step> steps = new EnumMap<>(StepName.class);
         for (StepName name : StepName.values()) {

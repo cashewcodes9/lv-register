@@ -17,6 +17,8 @@ dependencies {
     implementation(project(":serving-postgres"))
     implementation(project(":pipes"))
     implementation(libs.picocli)
+    implementation(platform(libs.awssdk.bom))
+    implementation(libs.awssdk.s3)
     implementation(libs.slf4j.api)
     runtimeOnly(libs.logback.classic)
     runtimeOnly(libs.logstash.encoder)
@@ -28,4 +30,6 @@ dependencies {
 application {
     mainClass = "lvregister.cli.Main"
     applicationName = "lv-register"
+    // DuckDB loads its native library through System.load.
+    applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
 }

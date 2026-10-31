@@ -34,7 +34,7 @@ gradle:
 ## Run all Java steps for one capture: make run DATE=2026-11-02
 run:
 	@test -n "$(DATE)" || { echo "usage: make run DATE=YYYY-MM-DD"; exit 2; }
-	$(COMPOSE) run --rm --build cli run --date $(DATE)
+	$(COMPOSE) --profile core run --rm --build cli run --date $(DATE)
 
 ## Service state, bucket usage and database sizes
 status:
