@@ -37,9 +37,10 @@ data.gov.lv  as published   Parquet per file    Java, pure    typed       Java  
 | Serving | PostgreSQL `lv_serving`, behind the `serving` port | latest company state, events, runs, stats, features | `index` through `ServingWriter` |
 
 **Storage:** SeaweedFS provides the S3 API locally (`lake` service), as in Oversee. Java uses
-AWS SDK v2 `S3Client` with an endpoint override and path-style access; DuckDB and dbt use the
-`httpfs` extension with the same settings. Pointing `S3_ENDPOINT` at nothing and using AWS
-credentials moves everything to AWS S3. A local-directory implementation of the `storage`
+the AWS SDK v2 `S3Client` only as an S3 protocol client, always with an endpoint override
+(`S3_ENDPOINT`, required) and path-style access; DuckDB and dbt use the `httpfs` extension
+with the same settings. Nothing talks to Amazon: any S3-compatible store works by pointing
+`S3_ENDPOINT` at it. A local-directory implementation of the `storage`
 interface exists for unit tests.
 
 **History:** UR publishes only the current state. The lake is the only copy of past states, so

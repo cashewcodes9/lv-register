@@ -35,8 +35,8 @@ This project re-applies the architecture of my Python project Oversee
 before starting. Keep these patterns:
 
 - Raw files cached per capture, fingerprinted with SHA-256, skipped if already processed.
-- S3-compatible object storage (SeaweedFS locally) for raw files and the lake. The same code
-  works against AWS S3 by changing configuration only.
+- S3-compatible object storage (SeaweedFS) for raw files and the lake. The code speaks the S3
+  API to the endpoint in `S3_ENDPOINT`, so another S3-compatible store is a configuration change.
 - Hive-partitioned Parquet lake: `s3://lv-lake/<file>/date=YYYY-MM-DD/<file>.parquet`,
   unfiltered, with the source SHA-256 in the Parquet key-value metadata. DuckDB reads and
   writes it through `httpfs`.
@@ -85,7 +85,7 @@ logic lives in Java.
 | JSON | Jackson 3 (`tools.jackson`, the Spring Boot 4 default), records support; the same version in pipeline modules |
 | CSV | FastCSV or Apache Commons CSV |
 | HTTP client | java.net.http.HttpClient |
-| Object storage | SeaweedFS (S3 API) locally, AWS S3 compatible. Java uses AWS SDK v2 `S3Client` with endpoint override and path-style access |
+| Object storage | SeaweedFS (S3 API). Java uses the AWS SDK v2 `S3Client` as the S3 protocol client, with the required `S3_ENDPOINT` override and path-style access; no AWS services |
 | Lake | Parquet files written and queried with DuckDB 1.4.x LTS (JDBC, `httpfs` extension). Pinned to 1.4: DuckDB 2.0 binaries need AVX, which the dev VM lacks (source assessment 4.9) |
 | Events | JSON Lines per capture in S3 |
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
@@ -266,7 +266,7 @@ lv-register/
   .env.example
   modules/
     domain/       records, sealed types, no I/O, no dependencies
-    storage/      S3 object store (AWS SDK v2) and local-directory implementation
+    storage/      S3 object store for SeaweedFS (AWS SDK v2 as protocol client) and local directory
     ingest/       download, sha256 manifest, raw cache
     lake/         Parquet snapshots via DuckDB JDBC (httpfs)
     normalize/    lake rows -> domain, legal form + status mapping, dropped-row counts
