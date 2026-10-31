@@ -23,7 +23,13 @@ React frontend. Follow [PLAN.md](PLAN.md) milestone by milestone.
   names and value sets in `docs/source-assessment.md`, and only then finalize the model.
   Do not guess column names.
 - Run every build, test and tool in a container, never on the host. If a tool is missing,
-  add it to an image or a compose service. The host has only Docker and git.
+  add it to an image or a compose service. The host has only Docker, git and make.
+- Keep [EXECUTION.md](EXECUTION.md) current so work can resume in a new session: what is
+  done, what is on disk but uncommitted, next steps in order, pinned versions, environment
+  facts and decisions. Update it, and the PLAN.md checkboxes, at the end of every work
+  session, before a restart or when asked to pause, and after every milestone. Read it
+  first when starting a session.
+- Push to GitHub only after a milestone builds green; commit locally in small steps.
 - After each milestone: run `make build` (plus `make dbt-build` from Milestone 6 and the
   frontend build from Milestone 9 on), summarize what changed, and tick the checkboxes in
   PLAN.md.

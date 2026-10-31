@@ -94,7 +94,7 @@ logic lives in Java.
 | Tests | JUnit 5, AssertJ, jqwik (property tests), Testcontainers (Elasticsearch, SeaweedFS), ArchUnit; pytest for Dagster definitions; dbt data tests |
 | Logging | SLF4J + Logback, JSON to stdout, run id, Dagster run id, step and partition date in MDC |
 | Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
-| Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker and git |
+| Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker, git and make |
 | CI | GitHub Actions: backend build + test, dbt parse + build on fixtures, Dagster definitions load, frontend lint + build, Docker image builds |
 | Frontend | React + TypeScript (Vite), TanStack Query for data fetching, Recharts for charts, react-force-graph or d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
 
@@ -502,6 +502,9 @@ Rules:
 - [x] STOP and show me the assessment before continuing
 
 ### Milestone 2: Project setup + domain
+
+In progress. Current state and next steps: [EXECUTION.md](EXECUTION.md).
+
 - [ ] Gradle multi-module, Java 25 toolchain
 - [ ] Multi-stage `Dockerfile`; compose services `lake`, `elasticsearch`, `build`, `cli`,
       `duckdb` with healthchecks and profiles; `.env.example`; `Makefile`
@@ -598,7 +601,7 @@ After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch i
 ## 16. Definition of done
 
 - `make build` (Gradle in the `build` container) passes from a clean clone, including the
-  ArchUnit boundary test. The host needs only Docker and git.
+  ArchUnit boundary test. The host needs only Docker, git and make.
 - `make up` starts the whole stack: lake, Elasticsearch, Dagster, API and frontend.
 - The Dagster weekly schedule runs the full pipeline for a capture without manual steps, and the
   asset graph shows every asset and check green.
@@ -618,6 +621,8 @@ After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch i
 - Start with Milestone 1. Show me the source assessment before writing domain code.
 - Run every build, test and tool in a container, never on the host. If a tool is missing, add
   it to an image or a compose service.
+- Keep [EXECUTION.md](EXECUTION.md) current: update it and the PLAN.md checkboxes at the end
+  of every work session, before a restart, and after every milestone.
 - After each milestone: run `make build` (plus `make dbt-build` from Milestone 6 and the
   frontend build from Milestone 9 on), summarize what changed, and tick the checkboxes in
   this file.
