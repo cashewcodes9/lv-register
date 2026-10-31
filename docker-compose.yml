@@ -1,5 +1,5 @@
 # Services and profiles from PLAN.md section 6.1.
-#   core   long-running stores: lake (SeaweedFS S3), elasticsearch. `api` joins in Milestone 8.
+#   core   long-running stores: lake (SeaweedFS S3), postgres. `api` joins in Milestone 8.
 #   tools  one-shot containers started with `docker compose run`: build, cli, duckdb.
 # The orchestration (Dagster) and dev (web-dev) profiles join in later milestones.
 name: lv-register
@@ -49,24 +49,26 @@ services:
         condition: service_healthy
     restart: "no"
 
-  elasticsearch:
+  # One instance, two databases: lv_serving (serving store) and dagster (Milestone 7).
+  # The init script runs only on the first start with an empty volume.
+  postgres:
     profiles: ["core"]
-    image: elasticsearch:8.19.23
-    <<: *env
+    image: postgres:18.6-alpine3.24
     environment:
-      discovery.type: single-node
-      xpack.security.enabled: "false"
-      ES_JAVA_OPTS: "-Xms${ES_HEAP:-512m} -Xmx${ES_HEAP:-512m}"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-only}
+      SERVING_DB_PASSWORD: ${SERVING_DB_PASSWORD:-lv-serving-local-only}
+      DAGSTER_DB_PASSWORD: ${DAGSTER_DB_PASSWORD:-dagster-local-only}
     volumes:
-      - es-data:/usr/share/elasticsearch/data
+      - pg-data:/var/lib/postgresql
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
     ports:
-      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs 'http://127.0.0.1:9200/_cluster/health?wait_for_status=yellow&timeout=5s' >/dev/null"]
-      interval: 15s
-      timeout: 10s
-      retries: 20
-      start_period: 60s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lv_serving -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
 
   build:
@@ -91,7 +93,7 @@ services:
     depends_on:
       lake-init:
         condition: service_completed_successfully
-      elasticsearch:
+      postgres:
         condition: service_healthy
 
   duckdb:
@@ -110,5 +112,5 @@ services:
 
 volumes:
   lake-data:
-  es-data:
+  pg-data:
   gradle-cache:

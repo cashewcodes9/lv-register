@@ -9,7 +9,7 @@ export HOST_GID := $(shell id -g)
 help:
 	@awk '/^## /{d=substr($$0,4)} /^[a-z-]+:/{if(d){split($$1,t,":"); printf "  %-14s %s\n", t[1], d; d=""}}' Makefile
 
-## Start the long-running stack (profile core: lake, elasticsearch) and wait until healthy
+## Start the long-running stack (profile core: lake, postgres) and wait until healthy
 up:
 	$(COMPOSE) --profile core up -d --wait
 
@@ -30,10 +30,11 @@ run:
 	@test -n "$(DATE)" || { echo "usage: make run DATE=YYYY-MM-DD"; exit 2; }
 	$(COMPOSE) run --rm --build cli run --date $(DATE)
 
-## Service state and bucket usage
+## Service state, bucket usage and database sizes
 status:
 	$(COMPOSE) --profile core --profile tools ps -a
 	@echo "s3.bucket.list" | $(COMPOSE) exec -T lake weed shell -master=lake:9333 2>/dev/null || echo "lake is not running"
+	@$(COMPOSE) exec -T postgres psql -U postgres -Atc "SELECT datname || ': ' || pg_size_pretty(pg_database_size(datname)) FROM pg_database WHERE datname IN ('lv_serving','dagster')" 2>/dev/null || echo "postgres is not running"
 
 ## Open the DuckDB CLI on ./data
 duckdb:
