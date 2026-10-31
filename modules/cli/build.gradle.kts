@@ -24,6 +24,8 @@ dependencies {
     runtimeOnly(libs.logstash.encoder)
 
     testImplementation(libs.archunit)
+    testImplementation(platform(libs.awssdk.bom))
+    testImplementation(libs.awssdk.s3)
     testImplementation(libs.logback.classic)
 }
 
@@ -32,4 +34,9 @@ application {
     applicationName = "lv-register"
     // DuckDB loads its native library through System.load.
     applicationDefaultJvmArgs = listOf("--enable-native-access=ALL-UNNAMED")
+}
+
+// RealCaptureCheck holds a whole snapshot in memory; give it more heap when asked.
+tasks.test {
+    maxHeapSize = providers.environmentVariable("LV_TEST_HEAP").getOrElse("512m")
 }
