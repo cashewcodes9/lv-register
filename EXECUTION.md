@@ -22,7 +22,9 @@ it (`gh auth refresh -s workflow`), then run `git push origin main` and check th
 ## What exists (Milestone 2)
 
 - Gradle 9.8.2 multi-module build: `settings.gradle.kts` with modules `domain storage ingest lake
-  normalize diff quality index pipes cli` under `modules/` (`api` joins in Milestone 8).
+  normalize diff quality index serving serving-postgres pipes cli` under `modules/` (`api` joins
+  in Milestone 8). `serving` (port, `java-test-fixtures` for the contract suite) and
+  `serving-postgres` (adapter; driver, HikariCP, Flyway declared) have no classes yet.
   Version catalog `gradle/libs.versions.toml`; convention plugin `lv.java-conventions` in
   `buildSrc/` (Java 25 toolchain, `-Xlint:all -Werror`, JUnit 6, AssertJ).
 - `modules/domain`: `RegNumber`, `LegalForm` + `LegalFamily`, `CompanyStatus`, `Address`,
@@ -32,7 +34,10 @@ it (`gh auth refresh -s workflow`), then run `git push origin main` and check th
   `Steps` wiring with `notImplemented()` placeholders, `StepRunner` (MDC, logs, exit code),
   `RunContext`, `logback.xml` (LogstashEncoder JSON). Tests: `MainTest`, `RunContextTest`,
   `JsonLoggingTest` (encodes events with the configured STDOUT encoder), `ArchitectureTest`
-  (no Spring outside `..api..`; `domain` depends only on `java..`). 16 tests.
+  (no Spring outside `..api..`; `domain` depends only on `java..`; the `serving` port has no
+  SQL/JDBC/search types; only `cli`, `api` and adapters depend on `serving.*` adapter
+  packages). The two serving rules use `allowEmptyShould` until Milestone 5 adds classes:
+  then check that they really match (e.g. break one on purpose). 18 tests.
 - `docker/builder/Dockerfile`: build image (JDK 25, user with host uid/gid, `GRADLE_USER_HOME`
   on the `gradle-cache` named volume, entrypoint `./gradlew`). Named `builder`, not `build`,
   because `.gitignore` ignores `build/`.
@@ -40,13 +45,17 @@ it (`gh auth refresh -s workflow`), then run `git push origin main` and check th
   (JRE 25, user uid 10001). `.dockerignore` keeps `data/` and build output out.
 - `docker-compose.yml`: profile `core` = `lake` (SeaweedFS 4.51, S3 :8333, filer :8888, keys in
   `docker/seaweedfs/s3.json`), `lake-init` (one-shot, `docker/seaweedfs/init-buckets.sh`,
-  idempotent), `elasticsearch` (8.19.23, single node, security off, heap `ES_HEAP`); profile
+  idempotent), `postgres` (18.6-alpine3.24, :5432; `docker/postgres/init-databases.sh` creates
+  databases `lv_serving` and `dagster` with owner roles of the same name on first start;
+  passwords from `.env`; CONNECT revoked from PUBLIC); profile
   `tools` = `build`, `cli`, `duckdb`. Ports on 127.0.0.1, healthchecks, named volumes
-  `lake-data`, `es-data`, `gradle-cache`, optional `.env`.
+  `lake-data`, `pg-data`, `gradle-cache`, optional `.env`.
 - `.env.example`, `Makefile` (`help up down build test run status duckdb fetch-capture`),
   `.github/workflows/ci.yml` (`make build` + `docker build --target cli`).
 - Checked by hand: S3 write and read through DuckDB `httpfs` with the dev keys; a wrong secret
-  gets HTTP 403; running `lake-init` a second time works.
+  gets HTTP 403; running `lake-init` a second time works. Postgres: the `lv_serving` role
+  can create `pg_trgm` and `unaccent` (trusted extensions, so Flyway can own them);
+  `unaccent('Rīga SIA Ķekava')` = `Riga SIA Kekava`; `lv_serving` cannot connect to `dagster`.
 
 ## Milestone 3: next steps, in order
 
@@ -64,6 +73,11 @@ it (`gh auth refresh -s workflow`), then run `git push origin main` and check th
    normalizers that return `Cleaned<T>`, legal form and status mapping with tests.
 6. Ask the owner before choosing a library that isn't in the pinned table below.
 
+Milestone 5 (serving), for later: the design is in docs/architecture.md "Serving". Write the
+contract suite in `serving` testFixtures first, then the Postgres adapter against it with a
+PostgreSQL Testcontainer (same image tag as compose). `unaccent()` is only STABLE: wrap it in an
+IMMUTABLE SQL function for the generated search column.
+
 ## Pinned versions
 
 | What | Version | Note |
@@ -78,7 +92,9 @@ it (`gh auth refresh -s workflow`), then run `git push origin main` and check th
 | JUnit / AssertJ / ArchUnit | 6.1.3 / 3.27.7 / 1.5.1 | ArchUnit core artifact with plain `@Test` (no `archunit-junit5` engine, to avoid JUnit 6 engine issues) |
 | jqwik | 1.10.x | Milestone 4; check JUnit 6 compatibility |
 | AWS SDK v2 / FastCSV / Testcontainers | 2.57.x / 4.4.0 / 2.0.x | Milestone 3+; FastCSV handles quoted multi-line fields |
-| SeaweedFS / Elasticsearch | 4.51 / 8.19.23 | |
+| SeaweedFS | 4.51 | |
+| PostgreSQL image | 18.6-alpine3.24 | 19 is still RC (2026-10-31) |
+| PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime |
 
 Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 `search.maven.org` index is stale.
@@ -89,7 +105,8 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
   No perl or python on the host. Host uid 1001; docker group gid 102.
 - VM: 1 CPU, 4 GB RAM (after the owner's upgrade), 58 GB disk, no AVX. Gradle runs with no
   daemon, no parallel builds and `-Xmx1g`. Stop the core stack (`make down`) before heavy
-  builds if memory is tight: Elasticsearch uses about 1 GB.
+  builds if memory is tight. With lake + Postgres up, about 0.8 GB is in use
+  (it was about 1.5 GB with Elasticsearch).
 - The Docker daemon does not always come back after a VM restart. Check it with `docker info`;
   if it's down, the owner starts it with `! doas rc-service docker start` in the Claude
   session.
@@ -117,3 +134,4 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-10-31 | Push only after a milestone builds green |
 | 2026-10-31 | `LegalForm` is a record `(code, LegalFamily)`, not one sealed record per family; `NaturalPerson`/`PersonKey` `toString()` redacted; `Money` strips trailing zeros; base package `io.github.cashewcodes9.lvregister` |
 | 2026-10-31 | Compose profile `tools` for the one-shot build, cli and duckdb containers; `make up` starts only long-running profiles (owner approved; PLAN.md 6.1 updated) |
+| 2026-10-31 | Serving store: PostgreSQL instead of Elasticsearch (lower RAM on the 4 GB VM). One Postgres 18 instance with databases `lv_serving` and `dagster`; plain JDBC + HikariCP; Flyway; search with `pg_trgm` + `unaccent`. Behind the `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite, so an Elasticsearch adapter can replace it (ROADMAP.md section 4). The `index` module stays as the indexing step. Owner chose all four options. |
