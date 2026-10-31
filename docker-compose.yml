@@ -1,0 +1,17 @@
+# Milestone 1: only the exploration service. The full stack (section 6.1 of PLAN.md)
+# is added from Milestone 2 on.
+name: lv-register
+
+services:
+  duckdb:
+    profiles: ["dev"]
+    build:
+      context: docker/duckdb
+    image: lv-register/duckdb:1.4.5
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /work
+    volumes:
+      - ./data:/work/data
+      - ./scripts:/work/scripts:ro
+    stdin_open: true
+    tty: true
