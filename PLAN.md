@@ -525,12 +525,14 @@ Rules:
 - [x] Legal form and status mapping with tests
 
 ### Milestone 4: Diff + events
-- [ ] Snapshot diff for all event types in section 8
-- [ ] Deterministic event ids
-- [ ] Property tests from section 9
+- [x] Snapshot diff for all event types in section 8
+- [x] Deterministic event ids
+- [x] Property tests from section 9
 - [ ] Collect two or more real captures (`make capture-now` a few days apart) and produce real
-      events
-- [ ] Spot-check 5 real events against info.ur.gov.lv
+      events (so far: 2026-10-31 and 2026-11-01, one day apart, 4 real events; open until a
+      capture a few days later)
+- [ ] Spot-check 5 real events against info.ur.gov.lv (open: needs more captures; the portal
+      needs a browser)
 
 ### Milestone 5: Quality + index
 - [ ] Run record and quality report (section 11)

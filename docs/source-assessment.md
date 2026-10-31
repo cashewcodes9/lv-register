@@ -349,3 +349,19 @@ Findings that changed the model:
   rows are dropped and counted; the file is used for history only, not for status.
 - **Capital:** 3,022 companies list both registered and paid-up equity; the registered amount
   is used.
+
+## 10. First real diff (Milestone 4)
+
+Captures 2026-10-31 (files of 2026-10-30 21:25 UTC) and 2026-11-01 (files of 2026-10-31
+21:25 UTC, captured after midnight Riga time). The Java diff found 4 events, all
+`MANAGEMENT_CHANGED` with one officer removed and none added: three associations (BDR,
+executive body) and one farm (ZEM, owner). An independent SQL check on the lake Parquet files
+agrees: `register`, `members` and `beneficial_owners` are identical in both captures, and
+`officers` differs by exactly 4 removed rows in these 4 companies. This Saturday export
+changed very little; a weekday capture is needed for a fuller picture.
+
+Finding 4.4 (are role ids stable across captures?) is still open: there were no additions to
+compare. The diff compares roles by value, so it does not depend on the ids.
+
+The diff step holds both snapshots in memory: peak 2.2 GB for the cli container with
+`-Xmx2g`, 1 min 53 s on the 1-CPU VM.
