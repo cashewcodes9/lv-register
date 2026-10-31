@@ -15,6 +15,9 @@ React frontend. Follow [PLAN.md](PLAN.md) milestone by milestone.
 
 - Ask me before changing scope.
 - If anything is unclear, ask me instead of guessing.
+- If you are unsure about a topic, a situation or a decision, ask me with a multiple-choice
+  question (the AskUserQuestion tool): give 2-4 concrete options with their trade-offs,
+  put your recommendation first, and wait for my answer before continuing.
 - Start with Milestone 1. Show me the source assessment before writing domain code.
 - Before writing domain code, download one capture of every file, record the real column
   names and value sets in `docs/source-assessment.md`, and only then finalize the model.
