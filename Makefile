@@ -2,8 +2,10 @@
 COMPOSE := docker compose
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
+# Group of the Docker socket, so Testcontainers in the build container may use it.
+export DOCKER_GID := $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo 0)
 
-.PHONY: help up down build test run status duckdb fetch-capture
+.PHONY: help up down build test gradle run status duckdb fetch-capture
 
 ## Show the targets
 help:
@@ -24,6 +26,10 @@ build:
 ## Gradle tests only, in the build container
 test:
 	$(COMPOSE) run --rm build test
+
+## Any Gradle tasks in the build container: make gradle ARGS=":storage:test"
+gradle:
+	$(COMPOSE) run --rm build $(ARGS)
 
 ## Run all Java steps for one capture: make run DATE=2026-11-02
 run:
