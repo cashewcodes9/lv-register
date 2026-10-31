@@ -15,9 +15,11 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 2. Project setup + domain | done 2026-10-31: `make build` green from a clean clone (3m 35s, cold cache) |
 | 3–10 | not started |
 
-Git: everything is committed on `main`, but **not pushed**: GitHub rejected the push because
-the token lacks the `workflow` scope needed for `.github/workflows/ci.yml`. The owner refreshes
-it (`gh auth refresh -s workflow`), then run `git push origin main` and check the first CI run.
+Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
+`dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
+flow (CLAUDE.md): `milestone/<n>-<name>` from `dev` → PR into `dev` → merge after green CI
+(merge commit, done by Claude) → `dev` to `main` only when the owner asks. CI runs on pushes
+to `main` and `dev` and on PRs into either. The `gh` token now has the `workflow` scope.
 
 ## What exists (Milestone 2)
 
@@ -59,6 +61,7 @@ it (`gh auth refresh -s workflow`), then run `git push origin main` and check th
 
 ## Milestone 3: next steps, in order
 
+0. `git switch dev && git pull && git switch -c milestone/3-storage-ingest`.
 1. Read PLAN.md Milestone 3 and the sections it refers to (storage, ingest manifest, lake layout).
 2. `storage`: an `ObjectStore` interface with an S3 version (AWS SDK v2, path style, endpoint from
    `S3_ENDPOINT`) and a local-directory version. Test the S3 version with Testcontainers
@@ -131,8 +134,9 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-10-31 | DuckDB pinned to the 1.4 LTS line |
 | 2026-10-31 | `make` installed on the host (owner's choice; the host rule is now "Docker, git and make") |
 | 2026-10-31 | Resource limits: deferred; the owner then increased the VM to 4 GB RAM (still 1 CPU) |
-| 2026-10-31 | Push only after a milestone builds green |
+| 2026-10-31 | Push only after a milestone builds green (superseded below by the branch flow) |
 | 2026-10-31 | `LegalForm` is a record `(code, LegalFamily)`, not one sealed record per family; `NaturalPerson`/`PersonKey` `toString()` redacted; `Money` strips trailing zeros; base package `lvregister` |
 | 2026-10-31 | Compose profile `tools` for the one-shot build, cli and duckdb containers; `make up` starts only long-running profiles (owner approved; PLAN.md 6.1 updated) |
 | 2026-10-31 | Serving store: PostgreSQL instead of Elasticsearch (lower RAM on the 4 GB VM). One Postgres 18 instance with databases `lv_serving` and `dagster`; plain JDBC + HikariCP; Flyway; search with `pg_trgm` + `unaccent`. Behind the `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite, so an Elasticsearch adapter can replace it (ROADMAP.md section 4). The `index` module stays as the indexing step. Owner chose all four options. |
 | 2026-10-31 | Base package and Gradle group renamed from `io.github.cashewcodes9.lvregister` to `lvregister` (after the repository name, not the GitHub user; owner request) |
+| 2026-10-31 | Branch flow: work from `dev`; one `milestone/<n>-<name>` branch per milestone; PR into `dev`, merged by Claude after green CI; `dev` → `main` only when the owner asks. CI on `main`/`dev` pushes and PRs; `actions/checkout@v5` (v4 ran on deprecated Node 20) |

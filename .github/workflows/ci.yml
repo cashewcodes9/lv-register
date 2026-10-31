@@ -1,15 +1,18 @@
 name: ci
 
+# main: stable showcase. dev: integration branch. Milestone branches (milestone/<n>-<name>)
+# are checked through their pull request into dev.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+    branches: [dev, main]
 
 jobs:
   backend:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Gradle build and tests (build container)
         run: make build
       - name: Build the cli image
