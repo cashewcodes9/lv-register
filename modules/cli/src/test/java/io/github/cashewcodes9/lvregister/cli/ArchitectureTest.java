@@ -8,7 +8,7 @@ import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import org.junit.jupiter.api.Test;
 
-/** Module boundaries from PLAN.md: Spring only in `api`, `domain` without dependencies. */
+/** Module boundaries from PLAN.md: Spring only in `api`, `domain` without dependencies, serving behind its port. */
 class ArchitectureTest {
 
     private static final JavaClasses CLASSES = new ClassFileImporter()
@@ -19,6 +19,29 @@ class ArchitectureTest {
     void onlyTheApiModuleUsesSpring() {
         noClasses().that().resideOutsideOfPackage("io.github.cashewcodes9.lvregister.api..")
                 .should().dependOnClassesThat().resideInAPackage("org.springframework..")
+                .check(CLASSES);
+    }
+
+    /** The port speaks domain and read records only, so any backend can implement it. */
+    @Test
+    void servingPortHasNoStoreTypes() {
+        noClasses().that().resideInAPackage("io.github.cashewcodes9.lvregister.serving")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "java.sql..", "javax.sql..", "org.postgresql..", "com.zaxxer..",
+                        "org.flywaydb..", "co.elastic..", "org.elasticsearch..")
+                .allowEmptyShould(true)
+                .check(CLASSES);
+    }
+
+    /** Only the wiring (cli, api) knows which adapter is used; everything else sees the port. */
+    @Test
+    void onlyWiringDependsOnServingAdapters() {
+        noClasses().that().resideOutsideOfPackages(
+                        "io.github.cashewcodes9.lvregister.cli..",
+                        "io.github.cashewcodes9.lvregister.api..",
+                        "io.github.cashewcodes9.lvregister.serving.*..")
+                .should().dependOnClassesThat().resideInAPackage("io.github.cashewcodes9.lvregister.serving.*..")
+                .allowEmptyShould(true)
                 .check(CLASSES);
     }
 

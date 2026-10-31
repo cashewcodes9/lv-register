@@ -13,6 +13,8 @@ dependencies {
     implementation(project(":diff"))
     implementation(project(":quality"))
     implementation(project(":index"))
+    implementation(project(":serving"))
+    implementation(project(":serving-postgres"))
     implementation(project(":pipes"))
     implementation(libs.picocli)
     implementation(libs.slf4j.api)
