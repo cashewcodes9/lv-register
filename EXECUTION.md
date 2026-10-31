@@ -5,88 +5,77 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-10-31 · **Current milestone:** 2 (in progress)
+**Last updated:** 2026-10-31 · **Current milestone:** 3 (not started)
 
 ## Status
 
 | Milestone | State |
 |---|---|
 | 1. Source exploration | done, approved by owner 2026-10-31 |
-| 2. Project setup + domain | in progress, code written but **not built, not committed** |
+| 2. Project setup + domain | done 2026-10-31: `make build` green from a clean clone (3m 35s, cold cache) |
 | 3–10 | not started |
 
-Git: 3 Milestone 1 commits on `main` are **not pushed**. Push together with Milestone 2 once
-`make build` is green (owner's rule: push only after a milestone builds).
+Git: everything is committed on `main`, but **not pushed**: GitHub rejected the push because
+the token lacks the `workflow` scope needed for `.github/workflows/ci.yml`. The owner refreshes
+it (`gh auth refresh -s workflow`), then run `git push origin main` and check the first CI run.
 
-## Milestone 2: what exists on disk (uncommitted)
+## What exists (Milestone 2)
 
-- `settings.gradle.kts`: modules `domain storage ingest lake normalize diff quality index pipes
-  cli` under `modules/`. `api` joins in Milestone 8.
-- `gradle/libs.versions.toml`: version catalog. `buildSrc/` holds the convention plugin
-  `lv.java-conventions` (Java 25 toolchain, `-Xlint:all -Werror`, JUnit 6, AssertJ).
-- `gradle.properties`: no daemon, `-Xmx768m`, no parallel builds. These were set for the old
-  1 CPU / 3 GB VM; relax them now that the VM has more resources.
-- Gradle wrapper 9.8.2 (`gradlew`, `gradle/wrapper/`), generated in `gradle:9.8.2-jdk25`.
+- Gradle 9.8.2 multi-module build: `settings.gradle.kts` with modules `domain storage ingest lake
+  normalize diff quality index pipes cli` under `modules/` (`api` joins in Milestone 8).
+  Version catalog `gradle/libs.versions.toml`; convention plugin `lv.java-conventions` in
+  `buildSrc/` (Java 25 toolchain, `-Xlint:all -Werror`, JUnit 6, AssertJ).
 - `modules/domain`: `RegNumber`, `LegalForm` + `LegalFamily`, `CompanyStatus`, `Address`,
-  `Money`, `Company`, `PersonKey`, `Party` (sealed: NaturalPerson, LatvianEntity,
-  ForeignEntity, JointOwners), `Role` (sealed: Officer, Shareholder, BeneficialOwner),
-  `Snapshot`, `ObservedBetween`, `CompanyEvent` (sealed, 9 types), `Cleaned`, `Checks`.
-  Tests: `ValueRecordsTest`, `CompanyEventTest`, `Fixtures` (synthetic data only).
-- `modules/cli`: `Main` (Picocli; subcommands download, lake, diff, quality, index, prune,
-  run; `--date`), `Step`, `StepName`, `Steps` (wiring, `notImplemented()` placeholder),
-  `StepRunner` (MDC + start/finish/failure logs, exit code), `RunContext` (`run_id` from
-  `LV_RUN_ID` or a UUID, `dagster_run_id` from `DAGSTER_RUN_ID`, `step`, `partition_date`),
-  `src/main/resources/logback.xml` (LogstashEncoder JSON to stdout).
-- Other pipeline modules have only a `build.gradle.kts` (depends on `domain`, `slf4j-api`).
+  `Money`, `Company`, `PersonKey`, `Party` (sealed), `Role` (sealed), `Snapshot`,
+  `ObservedBetween`, `CompanyEvent` (sealed, 9 types), `Cleaned`, `Checks`. 25 tests.
+- `modules/cli`: Picocli `Main` (download, lake, diff, quality, index, prune, run; `--date`),
+  `Steps` wiring with `notImplemented()` placeholders, `StepRunner` (MDC, logs, exit code),
+  `RunContext`, `logback.xml` (LogstashEncoder JSON). Tests: `MainTest`, `RunContextTest`,
+  `JsonLoggingTest` (encodes events with the configured STDOUT encoder), `ArchitectureTest`
+  (no Spring outside `..api..`; `domain` depends only on `java..`). 16 tests.
+- `docker/builder/Dockerfile`: build image (JDK 25, user with host uid/gid, `GRADLE_USER_HOME`
+  on the `gradle-cache` named volume, entrypoint `./gradlew`). Named `builder`, not `build`,
+  because `.gitignore` ignores `build/`.
+- Root `Dockerfile`: stages `jdk` (`./gradlew :cli:installDist`, BuildKit cache mount) and `cli`
+  (JRE 25, user uid 10001). `.dockerignore` keeps `data/` and build output out.
+- `docker-compose.yml`: profile `core` = `lake` (SeaweedFS 4.51, S3 :8333, filer :8888, keys in
+  `docker/seaweedfs/s3.json`), `lake-init` (one-shot, `docker/seaweedfs/init-buckets.sh`,
+  idempotent), `elasticsearch` (8.19.23, single node, security off, heap `ES_HEAP`); profile
+  `tools` = `build`, `cli`, `duckdb`. Ports on 127.0.0.1, healthchecks, named volumes
+  `lake-data`, `es-data`, `gradle-cache`, optional `.env`.
+- `.env.example`, `Makefile` (`help up down build test run status duckdb fetch-capture`),
+  `.github/workflows/ci.yml` (`make build` + `docker build --target cli`).
+- Checked by hand: S3 write and read through DuckDB `httpfs` with the dev keys; a wrong secret
+  gets HTTP 403; running `lake-init` a second time works.
 
-### Domain choices made in Milestone 2 (tell the owner, easy to change)
+## Milestone 3: next steps, in order
 
-- `LegalForm` is a record `(code, LegalFamily)`, not one sealed record per family as in the
-  PLAN.md sketch: 61 UR codes map to a few families, and the record keeps the raw code.
-- `NaturalPerson.toString()` and `PersonKey.toString()` are redacted so that person data
-  cannot leak into logs through `toString`.
-- `Money` and `Shareholder.shares` strip trailing zeros, so `100.00` equals `100`.
-- Base package `io.github.cashewcodes9.lvregister`.
-
-## Milestone 2: next steps, in order
-
-1. Write the remaining tests: `cli` tests (subcommands parse `--date`, MDC keys in JSON
-   output, exit code 1 for `notImplemented`) and an ArchUnit test in `modules/cli/src/test`:
-   no class outside `..lvregister.api..` depends on `org.springframework..`; `domain`
-   depends only on `java..`.
-2. `docker/build/Dockerfile`: `eclipse-temurin:25.0.5_8-jdk-noble`, user with the host uid
-   (`ARG HOST_UID`; remove the image's `ubuntu` user first), `/home/builder/.gradle` for the
-   named-volume Gradle cache.
-3. Root `Dockerfile`: stage `jdk` (`./gradlew :cli:installDist`), stage `cli`
-   (`eclipse-temurin:25.0.5_8-jre-noble`, non-root). Stages `web` and `api` come in
-   Milestones 8 and 9.
-4. Extend `docker-compose.yml`: `lake` (`chrislusf/seaweedfs:4.51`, S3 :8333, filer :8888,
-   `docker/seaweedfs/s3.json` with dev keys, a one-shot init that creates the `lv-raw`,
-   `lv-lake` and `lv-marts` buckets via `weed shell`), `elasticsearch`
-   (`elasticsearch:8.19.23`, single node, security off, heap from `.env`), `build`, `cli`,
-   and the existing `duckdb`. Healthchecks, `condition: service_healthy`, profiles `core`
-   and `dev`, `restart: unless-stopped`, ports bound to `127.0.0.1`, `env_file` with
-   `required: false`.
-5. `.env.example`: S3 endpoint, keys, region and buckets, Elasticsearch URL and heap,
-   retention (`RAW_KEEP=2`, `LAKE_KEEP=12`, `STORAGE_WARN_GB=10`).
-6. `Makefile`: `up`, `down`, `build`, `test`, `run DATE=`, `status`, `duckdb`,
-   `fetch-capture`. The host now has GNU make 4.4.1.
-7. `.github/workflows/ci.yml`: `make build` and `docker build --target cli .`.
-8. Run `make build` from a clean state, fix the failures, tick the Milestone 2 boxes in
-   PLAN.md, commit in small commits, push, update this file.
+1. Read PLAN.md Milestone 3 and the sections it refers to (storage, ingest manifest, lake layout).
+2. `storage`: an `ObjectStore` interface with an S3 version (AWS SDK v2, path style, endpoint from
+   `S3_ENDPOINT`) and a local-directory version. Test the S3 version with Testcontainers
+   (SeaweedFS image 4.51).
+3. Testcontainers from the `build` container: mount `/var/run/docker.sock`, add the socket's
+   group (gid 102 on this VM; use `group_add` with a `DOCKER_GID` variable that the Makefile
+   reads with `stat -c %g`), set `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` plus
+   `extra_hosts: host.docker.internal:host-gateway`. Check that it works in CI too.
+4. Downloader with a sha256 manifest in `s3://lv-raw`, skip unchanged files, write through a
+   temp key.
+5. Lake writer (CSV to Parquet with DuckDB JDBC 1.4.5.0 `httpfs`, source sha in the metadata),
+   normalizers that return `Cleaned<T>`, legal form and status mapping with tests.
+6. Ask the owner before choosing a library that isn't in the pinned table below.
 
 ## Pinned versions
 
 | What | Version | Note |
 |---|---|---|
-| Java | 25 (Temurin 25.0.5_8) | |
+| Java | 25 (Temurin 25.0.5_8, jdk/jre noble) | |
 | Gradle | 9.8.2 | |
 | DuckDB CLI / JDBC | 1.4.5 / 1.4.5.0 | 1.4 LTS. 2.0 binaries need AVX; the VM CPU (QEMU) has none |
 | Picocli | 4.7.7 | |
 | SLF4J / Logback | 2.0.20 / 1.5.38 | logback 1.5 line: logstash-logback-encoder 9.0 is built on it |
 | logstash-logback-encoder | 9.0 | uses Jackson 3 (`tools.jackson`), as the plan requires |
 | Jackson | 3.2.x | when needed (Milestone 3+) |
-| JUnit / AssertJ / ArchUnit | 6.1.3 / 3.27.7 / 1.5.1 | |
+| JUnit / AssertJ / ArchUnit | 6.1.3 / 3.27.7 / 1.5.1 | ArchUnit core artifact with plain `@Test` (no `archunit-junit5` engine, to avoid JUnit 6 engine issues) |
 | jqwik | 1.10.x | Milestone 4; check JUnit 6 compatibility |
 | AWS SDK v2 / FastCSV / Testcontainers | 2.57.x / 4.4.0 / 2.0.x | Milestone 3+; FastCSV handles quoted multi-line fields |
 | SeaweedFS / Elasticsearch | 4.51 / 8.19.23 | |
@@ -96,16 +85,24 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 
 ## Environment facts
 
-- Host: Alpine Linux 3.24, Docker 29.9, Compose v5.6, git, GNU make (installed by the owner
-  on 2026-10-31). `doas`, not `sudo`. Host uid 1001.
-- VM CPU has no AVX (see DuckDB). The owner increased memory and CPUs after Milestone 1;
-  re-check with `nproc` and `free -g`.
-- Compose variables are `HOST_UID`/`HOST_GID`, because `UID` is read-only in bash.
-- Create `data/` yourself before the first `docker compose run`, otherwise Docker creates
-  it as root.
+- Host: Alpine Linux 3.24, Docker 29.9.2, Compose v5.6, git, GNU make. `doas`, not `sudo`.
+  No perl or python on the host. Host uid 1001; docker group gid 102.
+- VM: 1 CPU, 4 GB RAM (after the owner's upgrade), 58 GB disk, no AVX. Gradle runs with no
+  daemon, no parallel builds and `-Xmx1g`. Stop the core stack (`make down`) before heavy
+  builds if memory is tight: Elasticsearch uses about 1 GB.
+- The Docker daemon does not always come back after a VM restart. Check it with `docker info`;
+  if it's down, the owner starts it with `! doas rc-service docker start` in the Claude
+  session.
+- Compose variables are `HOST_UID`/`HOST_GID`, because `UID` is read-only in bash. The
+  Makefile exports them.
+- Create `data/` yourself before the first `docker compose run duckdb`, otherwise Docker creates
+  it as root (`make duckdb` does this).
 - The 2026-10-31 capture is in `data/raw/date=2026-10-31/` (git-ignored, contains person
   data). `scripts/dq.sh "<sql>"` runs SQL on it in the duckdb container (macro `csv(f)`
   reads a file as all-VARCHAR).
+- SeaweedFS S3 dev keys: `lvdev` / `lvdev-local-only-secret` (local only, in
+  `docker/seaweedfs/s3.json` and `.env.example`). DuckDB secret: `ENDPOINT 'lake:8333'`,
+  `URL_STYLE 'path'`, `USE_SSL false`.
 
 ## Decisions log
 
@@ -116,5 +113,7 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-10-31 | On termination, emit only `Terminated`, no role-removal events |
 | 2026-10-31 | DuckDB pinned to the 1.4 LTS line |
 | 2026-10-31 | `make` installed on the host (owner's choice; the host rule is now "Docker, git and make") |
-| 2026-10-31 | Resource limits: deferred; the owner then increased VM resources |
+| 2026-10-31 | Resource limits: deferred; the owner then increased the VM to 4 GB RAM (still 1 CPU) |
 | 2026-10-31 | Push only after a milestone builds green |
+| 2026-10-31 | `LegalForm` is a record `(code, LegalFamily)`, not one sealed record per family; `NaturalPerson`/`PersonKey` `toString()` redacted; `Money` strips trailing zeros; base package `io.github.cashewcodes9.lvregister` |
+| 2026-10-31 | Compose profile `tools` for the one-shot build, cli and duckdb containers; `make up` starts only long-running profiles (owner approved; PLAN.md 6.1 updated) |

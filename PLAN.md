@@ -185,8 +185,9 @@ project builds the same on any machine and in CI.
 | `duckdb` | small image with the DuckDB CLI | ad-hoc SQL over the lake (Milestone 1 and debugging) |
 
 - Compose profiles keep the default stack small: `core` (lake, elasticsearch, api),
-  `orchestration` (Dagster services), `dev` (build, web-dev, duckdb). `make up` starts all
-  of them.
+  `orchestration` (Dagster services), `dev` (web-dev). `make up` starts these long-running
+  profiles. One-shot containers (build, cli, duckdb) are in profile `tools` and run only
+  with `docker compose run`.
 - One multi-stage `Dockerfile` for Java: stage `web` builds the React app with Node, stage
   `jdk` builds the jars with the Gradle wrapper, final stages `cli` and `api` copy the jars
   onto `eclipse-temurin:25-jre`. Production image = target `api`.
@@ -503,17 +504,15 @@ Rules:
 
 ### Milestone 2: Project setup + domain
 
-In progress. Current state and next steps: [EXECUTION.md](EXECUTION.md).
-
-- [ ] Gradle multi-module, Java 25 toolchain
-- [ ] Multi-stage `Dockerfile`; compose services `lake`, `elasticsearch`, `build`, `cli`,
+- [x] Gradle multi-module, Java 25 toolchain
+- [x] Multi-stage `Dockerfile`; compose services `lake`, `elasticsearch`, `build`, `cli`,
       `duckdb` with healthchecks and profiles; `.env.example`; `Makefile`
-- [ ] `make build` runs the Gradle build in the `build` container from a clean clone
-- [ ] GitHub Actions CI (build + test)
-- [ ] `domain` module: records and sealed types, one invariant test per record
-- [ ] Picocli skeleton with all subcommands, Main with manual wiring
-- [ ] ArchUnit test: no module except `api` imports `org.springframework`
-- [ ] Logback JSON logging with run id in MDC
+- [x] `make build` runs the Gradle build in the `build` container from a clean clone
+- [x] GitHub Actions CI (build + test)
+- [x] `domain` module: records and sealed types, one invariant test per record
+- [x] Picocli skeleton with all subcommands, Main with manual wiring
+- [x] ArchUnit test: no module except `api` imports `org.springframework`
+- [x] Logback JSON logging with run id in MDC
 
 ### Milestone 3: Storage + ingest + lake + normalize
 - [ ] `storage` module: S3 object store against SeaweedFS (Testcontainers) and local directory
