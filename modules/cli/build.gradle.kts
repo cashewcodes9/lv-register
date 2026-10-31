@@ -26,6 +26,6 @@ dependencies {
 }
 
 application {
-    mainClass = "io.github.cashewcodes9.lvregister.cli.Main"
+    mainClass = "lvregister.cli.Main"
     applicationName = "lv-register"
 }

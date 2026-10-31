@@ -3,7 +3,7 @@ plugins { `java-library` }
 
 val libs = the<VersionCatalogsExtension>().named("libs")
 
-group = "io.github.cashewcodes9.lvregister"
+group = "lvregister"
 version = "0.1.0-SNAPSHOT"
 
 java {

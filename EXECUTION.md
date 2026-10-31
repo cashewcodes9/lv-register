@@ -132,6 +132,7 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-10-31 | `make` installed on the host (owner's choice; the host rule is now "Docker, git and make") |
 | 2026-10-31 | Resource limits: deferred; the owner then increased the VM to 4 GB RAM (still 1 CPU) |
 | 2026-10-31 | Push only after a milestone builds green |
-| 2026-10-31 | `LegalForm` is a record `(code, LegalFamily)`, not one sealed record per family; `NaturalPerson`/`PersonKey` `toString()` redacted; `Money` strips trailing zeros; base package `io.github.cashewcodes9.lvregister` |
+| 2026-10-31 | `LegalForm` is a record `(code, LegalFamily)`, not one sealed record per family; `NaturalPerson`/`PersonKey` `toString()` redacted; `Money` strips trailing zeros; base package `lvregister` |
 | 2026-10-31 | Compose profile `tools` for the one-shot build, cli and duckdb containers; `make up` starts only long-running profiles (owner approved; PLAN.md 6.1 updated) |
 | 2026-10-31 | Serving store: PostgreSQL instead of Elasticsearch (lower RAM on the 4 GB VM). One Postgres 18 instance with databases `lv_serving` and `dagster`; plain JDBC + HikariCP; Flyway; search with `pg_trgm` + `unaccent`. Behind the `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite, so an Elasticsearch adapter can replace it (ROADMAP.md section 4). The `index` module stays as the indexing step. Owner chose all four options. |
+| 2026-10-31 | Base package and Gradle group renamed from `io.github.cashewcodes9.lvregister` to `lvregister` (after the repository name, not the GitHub user; owner request) |
