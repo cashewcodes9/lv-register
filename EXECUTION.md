@@ -13,7 +13,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 |---|---|
 | 1. Source exploration | done, approved by owner 2026-10-31 |
 | 2. Project setup + domain | done 2026-10-31: `make build` green from a clean clone (3m 35s, cold cache) |
-| 3. Storage + ingest + lake + normalize | done 2026-10-31 on branch `milestone/3-storage-ingest`, PR into `dev` |
+| 3. Storage + ingest + lake + normalize | done 2026-10-31, merged into `dev` (PR #1, CI green) |
 | 4–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
