@@ -17,8 +17,8 @@ ran at all.
 | Logs | all containers, JSON to stdout (already in the MVP) | Grafana Alloy, Docker discovery | Loki |
 | Metrics, API | Micrometer via Actuator | OTLP to Alloy | Prometheus |
 | Metrics, pipeline | OpenTelemetry SDK in the CLI, flushed before exit (batch jobs cannot be scraped) | OTLP to Alloy | Prometheus |
-| Metrics, infrastructure | Elasticsearch and Postgres exporters, SeaweedFS metrics endpoint, container metrics | Prometheus scrape | Prometheus |
-| Traces | OpenTelemetry Java agent in the API (HTTP, Elasticsearch client); spans per step in the CLI | OTLP to Alloy | Tempo |
+| Metrics, infrastructure | Postgres exporter, SeaweedFS metrics endpoint, container metrics | Prometheus scrape | Prometheus |
+| Traces | OpenTelemetry Java agent in the API (HTTP, JDBC); spans per step in the CLI | OTLP to Alloy | Tempo |
 
 - Correlation: the MVP's log fields (`run_id`, `dagster_run_id`, `step`, `partition_date`)
   become metric labels and span attributes too. API logs carry the trace id. Grafana links
@@ -34,7 +34,7 @@ ran at all.
 | Pipeline health | last successful capture per step, run duration, failures, freshness, storage |
 | Data quality | rows kept and dropped per rule, orphans, unmapped values, events per type with thresholds |
 | API | request rate, error rate, p50/p95/p99 latency, rate-limit rejections, cache hits |
-| Infrastructure | Elasticsearch health, heap and disk; SeaweedFS storage; JVM; Postgres; container CPU and memory |
+| Infrastructure | Postgres connections, size and slow queries; SeaweedFS storage; JVM; container CPU and memory |
 
 **Alerts** (Grafana rules as code, each with an entry in `docs/runbook.md`):
 
@@ -46,13 +46,13 @@ ran at all.
 | event type above its spike threshold | usually a parsing problem |
 | orphans or unmapped values grew since the previous capture | source drift |
 | API 5xx above 1% or p95 above 500 ms for 10 min | users affected |
-| Elasticsearch not green, or a volume above 80% disk | serving at risk |
+| Postgres down or out of connections, or a volume above 80% disk | serving at risk |
 
 Thresholds start as listed and are tuned on real data.
 
 **Work:**
 - [ ] Compose profile `observability`: `alloy`, `prometheus`, `loki`, `tempo`, `grafana`,
-      `es-exporter`, `pg-exporter`; configs in `docker/<service>/`
+      `pg-exporter`; configs in `docker/<service>/`
 - [ ] `telemetry` Java module (no Spring): OTel SDK setup for the CLI, metric and span names,
       flush on exit
 - [ ] API: Micrometer OTLP registry, OTel Java agent in the `api` image
@@ -72,6 +72,23 @@ Thresholds start as listed and are tuned on real data.
 ## 3. Cloud deployment
 
 - [ ] AWS S3 instead of SeaweedFS (configuration only)
-- [ ] Managed Elasticsearch
+- [ ] Managed PostgreSQL (or managed Elasticsearch, if the adapter below is built)
 - [ ] Dagster on a VM or Kubernetes
 - [ ] Grafana Cloud instead of the local observability stack
+
+## 4. Elasticsearch serving adapter
+
+The MVP serves from PostgreSQL behind the `serving` port (PLAN.md section 4,
+docs/architecture.md "Serving"). Elasticsearch becomes worth it when search needs more than
+trigram matching: relevance tuning, facets, synonyms, or much more data and traffic.
+
+- [ ] `serving-elasticsearch` module: `ServingWriter` and `ServingQueries` on the Elasticsearch
+      Java client, indexes `companies`, `events`, `runs`, `stats`, `features` (document id =
+      registration number, event id, run id, aggregate or feature key)
+- [ ] Passes the `serving` contract test suite against an Elasticsearch Testcontainer
+- [ ] Compose service `elasticsearch` (pinned 8.x or 9.x, single node, security off locally,
+      heap from `.env`) in its own profile `search`
+- [ ] `SERVING_BACKEND=elasticsearch` switches the CLI and the API; Actuator gets an
+      Elasticsearch health indicator
+- [ ] Optional: dual write during a migration, then compare query results from both adapters
+- [ ] ADR: when and why serving moved (or not) to Elasticsearch

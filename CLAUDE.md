@@ -48,8 +48,13 @@ Do not reopen these without asking:
 - Java 25, Gradle Kotlin DSL, Picocli; plain Java in the pipeline.
 - Spring Boot 4 (not 3.x), only in `modules/api`.
 - Dagster + dbt stay; Python only for orchestration.
-- SeaweedFS (S3 API) for raw files, lake and marts; DuckDB over Parquet; Elasticsearch for
-  serving. The architecture follows [Oversee](https://github.com/cashewcodes9/Oversee).
+- SeaweedFS (S3 API) for raw files, lake and marts; DuckDB over Parquet. The architecture
+  follows [Oversee](https://github.com/cashewcodes9/Oversee).
+- Serving: PostgreSQL 18 (one instance, databases `lv_serving` and `dagster`) behind the
+  `serving` port (`ServingWriter`, `ServingQueries`), plain JDBC + HikariCP, Flyway. Code
+  outside `serving-*` adapters never touches SQL or a search client, so an Elasticsearch
+  adapter can replace Postgres later (ROADMAP.md section 4). Decided 2026-10-31, replacing
+  Elasticsearch.
 - Weekly captures (not daily), bounded retention, and an off/on switch (PLAN.md section 6.2).
 - Observability beyond logs and Dagster checks is on [ROADMAP.md](ROADMAP.md), not in the MVP.
 - No fixed deadline.

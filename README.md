@@ -21,9 +21,10 @@ Stack:
 - **Models and data tests:** dbt (dbt-duckdb)
 - **Orchestration:** Dagster: weekly capture schedule with an off/on switch, asset checks,
   reprocessing from the lake
-- **Serving:** Elasticsearch, Spring Boot 4 (API only), React + TypeScript
+- **Serving:** PostgreSQL behind a swappable serving port (Elasticsearch adapter on the
+  roadmap), Spring Boot 4 (API only), React + TypeScript
 
-Everything builds and runs in Docker; the host needs only Docker and git.
+Everything builds and runs in Docker; the host needs only Docker, git and make.
 
 ## Personal data
 

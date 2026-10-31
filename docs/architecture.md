@@ -22,7 +22,7 @@ data.gov.lv  as published   Parquet per file    Java, pure    typed       Java  
                                                                                         │
               quality ─► s3://lv-lake/reports ─────────────────────────────────┐        │
                                                                                ▼        ▼
-                                                              Elasticsearch: companies, events,
+                                                     serving store (PostgreSQL): companies, events,
                                                               runs, stats, features ─► API ─► React
 ```
 
@@ -34,7 +34,7 @@ data.gov.lv  as published   Parquet per file    Java, pure    typed       Java  
 | Events | `s3://lv-lake/events/date=YYYY-MM-DD/events.jsonl` | `diff(previous capture, this capture)`, sorted by event id | `diff` |
 | Reports | `s3://lv-lake/reports/date=YYYY-MM-DD/report.json` | run record and quality report | `quality` |
 | Marts | `s3://lv-marts/<model>.parquet` | dbt marts: companies, events, stats, value feature | dbt |
-| Serving | Elasticsearch | latest company state, events, runs, stats, features | `index` |
+| Serving | PostgreSQL `lv_serving`, behind the `serving` port | latest company state, events, runs, stats, features | `index` through `ServingWriter` |
 
 **Storage:** SeaweedFS provides the S3 API locally (`lake` service), as in Oversee. Java uses
 AWS SDK v2 `S3Client` with an endpoint override and path-style access; DuckDB and dbt use the
@@ -78,7 +78,7 @@ Each step reads objects and writes objects for one capture, so it can run alone.
    capture's events.
 5. **quality** (`quality`): run record and quality report (PLAN.md section 11).
 6. **index** (`index`): upsert companies, events, the run report, and the stats and feature
-   marts into Elasticsearch.
+   marts into the serving store through `ServingWriter`.
 
 dbt runs between `quality` and `index` (see Orchestration).
 
@@ -114,7 +114,7 @@ Re-running any step for a capture leaves every output unchanged.
 | Lake | skip a capture whose Parquet metadata has the same source sha256 |
 | Events | event id = `sha256(regNumber \| eventType \| snapshotDate \| canonicalPayload)`; objects sorted by id; temp key + copy |
 | Marts | dbt full rebuild from lake and events |
-| Elasticsearch | document id = registration number, event id or run id: upserts |
+| Serving | key = registration number, event id or run id: `INSERT ... ON CONFLICT DO UPDATE` |
 | Dagster | one partition per capture; re-materializing a partition reruns the idempotent steps |
 
 Canonical payloads are JSON with sorted keys and sorted sets, so the same change always gives
@@ -125,7 +125,7 @@ the same bytes and the same id.
 ```
    ┌──────────── cli (Picocli, manual wiring) ─────┐
    ▼        uses every pipeline module             ▼
-ingest  lake  normalize  diff  quality  index  pipes      api (Spring Boot 4)
+ingest  lake  normalize  diff  quality  index  pipes  serving-postgres   api (Spring Boot 4)
   │      │       │        │      │        │      │                │
   └──────┴───────┴────────┴──┬───┴────────┴──────┘                │
          storage ◄───────────┤                                    │
@@ -142,15 +142,19 @@ ingest  lake  normalize  diff  quality  index  pipes      api (Spring Boot 4)
 | `normalize` | row → record functions, legal form and status mapping | `domain` |
 | `diff` | `diff(Snapshot, Snapshot)`, event ids | `domain` |
 | `quality` | run record, report | `domain` |
-| `index` | Elasticsearch upserts and read queries | `domain` |
+| `index` | indexing step: reads events, reports and marts, writes through `ServingWriter` | `domain`, `storage`, `serving` |
+| `serving` | port: `ServingWriter`, `ServingQueries`, read records; abstract contract test suite (test fixtures) | `domain` |
+| `serving-postgres` | adapter: plain JDBC + HikariCP, Flyway migrations, `pg_trgm` + `unaccent` search | `domain`, `serving` |
 | `pipes` | Dagster Pipes messages (materializations, metadata, check results) | `domain` |
 | `cli` | one Picocli command per step; `Main` builds every object by hand | pipeline modules |
-| `api` | Spring Boot 4 controllers, DTO records, web config | `domain`, `index` |
+| `api` | Spring Boot 4 controllers, DTO records, web config | `domain`, `serving` (adapter only in wiring config) |
 
 Rules, checked by ArchUnit in the build:
 - Only `api` imports `org.springframework`.
 - `domain` imports nothing outside the JDK.
 - No pipeline module depends on `cli` or `api`.
+- Only `cli` and the API wiring configuration depend on a `serving-*` adapter; everything else
+  uses the `serving` port.
 
 The pipeline is batch code where a framework adds nothing, so it is plain Java. The API needs
 rate limiting, CORS, validation, error handling, health checks and OpenAPI, which Spring Boot
@@ -210,7 +214,7 @@ runs as three always-on services, with Postgres for its run and event storage:
 
 ```
 dagster-webserver (:3000 UI) ─┐
-dagster-daemon (schedules,    ├─► dagster-postgres
+dagster-daemon (schedules,    ├─► postgres (database `dagster`)
   sensors, run queue)         │
 dagster-code (gRPC) ──────────┘
      │ launches through the Docker socket
@@ -245,7 +249,7 @@ module writes the small JSON message protocol itself.
 - **Sensors:** run failure sensor logs the failure and posts to an optional webhook (`.env`).
 - **Reprocessing:** re-materializing a past capture reads from the lake. `ur_raw_files`
   cannot be re-fetched for past dates; partitions only exist for captures actually made.
-- **Blocking checks** stop downstream assets, so a broken file never reaches Elasticsearch.
+- **Blocking checks** stop downstream assets, so a broken file never reaches the serving store.
 
 ## Captures, retention and on/off
 
@@ -277,25 +281,51 @@ and alerts come later ([ROADMAP.md](../ROADMAP.md), section 1).
   `docker compose logs` or the Dagster run view.
 - **Dagster:** asset checks, freshness checks, the run failure sensor and retries (above) are
   the alerting layer for now.
-- **Health:** Actuator health for the API with an Elasticsearch indicator; healthchecks on
+- **Health:** Actuator health for the API with a database indicator; healthchecks on
   every compose service.
-- **Pipeline page:** the frontend shows run history and quality reports from the `runs` index.
+- **Pipeline page:** the frontend shows run history and quality reports from the `runs` table.
 
 **Personal data:** logs and Dagster metadata carry registration numbers and counts only,
 never person names or keys. A test runs the CLI on a fixture and scans its log output.
-Dagster, SeaweedFS and Elasticsearch listen on localhost only.
+Dagster, SeaweedFS and PostgreSQL listen on localhost only.
 
 ## Serving
 
-**Elasticsearch** (single node):
+The serving store sits behind a port, so the backend can be swapped without touching the
+pipeline or the API:
 
-| Index | Document id | Used for |
+```
+index (step) ──► ServingWriter ─┐                      ┌─► serving-postgres   (MVP)
+                                ├─ serving (port) ─────┤
+api ──────────► ServingQueries ─┘                      └─► serving-elasticsearch (later, ROADMAP.md)
+```
+
+- `serving` holds the two interfaces and the read records they return (search hits, company
+  view, event page, run summaries, stats). They speak domain and read records only: no SQL
+  types, no JDBC, no Elasticsearch types.
+- `serving` also publishes an abstract **contract test suite** (Gradle test fixtures): load a
+  fixture through `ServingWriter`, then check every `ServingQueries` method, including upsert
+  idempotency and search with and without diacritics. Every adapter runs it; a new adapter
+  counts as done only when it passes.
+- `SERVING_BACKEND=postgres` (default) picks the adapter: `cli` wires it by hand, the API in
+  one `@Configuration` class.
+
+**PostgreSQL adapter** (`serving-postgres`, database `lv_serving`, PostgreSQL 18): plain JDBC
+with HikariCP; schema in Flyway migrations, run by the indexer before it writes.
+
+| Table | Key | Used for |
 |---|---|---|
-| `companies` | registration number | search, company page |
-| `events` | event id | timelines, changes feed |
-| `runs` | run id | pipeline page |
+| `companies` | registration number | search, company page (officers and owners as `jsonb`) |
+| `events` | event id | timelines, changes feed (index on registration number and on date + type) |
+| `runs` | run id | pipeline page (report as `jsonb`) |
 | `stats` | aggregate name + key | overview page |
 | `features` | feature name + key | insights page |
+
+Search: extensions `pg_trgm` and `unaccent`; a generated, unaccented, lower-case name column
+(through an `IMMUTABLE` wrapper function, because `unaccent()` itself is only `STABLE`)
+with a GIN trigram index. Queries rank by trigram similarity, so "riga" finds "Rīga" and small
+typos still match. Loads are upserts (`INSERT ... ON CONFLICT DO UPDATE`), one transaction per
+capture.
 
 **API** (`api`, read-only, under `/api`): the endpoints in PLAN.md section 13.
 - DTO records separate from domain records.
@@ -303,7 +333,7 @@ Dagster, SeaweedFS and Elasticsearch listen on localhost only.
 - Errors as RFC 7807 `ProblemDetail` from one `@RestControllerAdvice`.
 - Bucket4j rate limit per IP; Caffeine cache for stats and search.
 - CORS only for the Vite dev server.
-- Actuator health (with Elasticsearch) and springdoc OpenAPI. The spec generates the
+- Actuator health (with the database) and springdoc OpenAPI. The spec generates the
   frontend's TypeScript types.
 - Persons appear only inside one company's response. No endpoint lists persons.
 
@@ -318,10 +348,10 @@ Every build, test and run happens in Docker; the host needs only Docker and git.
 
 | Profile | Services |
 |---|---|
-| `core` | `lake` (SeaweedFS), `elasticsearch`, `api` |
-| `orchestration` | `dagster-postgres`, `dagster-code`, `dagster-webserver`, `dagster-daemon` |
-| `dev` | `build` (JDK 25, Gradle), `web-dev` (Node 22, Vite), `duckdb` |
-| on demand | `cli` (launched by Dagster or `docker compose run`) |
+| `core` | `lake` (SeaweedFS), `postgres` (databases `lv_serving`, `dagster`), `api` |
+| `orchestration` | `dagster-code`, `dagster-webserver`, `dagster-daemon` |
+| `dev` | `web-dev` (Node 22, Vite) |
+| `tools` (run only) | `build` (JDK 25, Gradle), `cli` (launched by Dagster or `docker compose run`), `duckdb` |
 
 | Port | Service |
 |---|---|
@@ -329,7 +359,7 @@ Every build, test and run happens in Docker; the host needs only Docker and git.
 | 5173 | Vite dev server |
 | 3000 | Dagster UI |
 | 8333, 8888 | SeaweedFS S3 API, file browser |
-| 9200 | Elasticsearch |
+| 5432 | PostgreSQL |
 
 **Images:** one multi-stage `Dockerfile` for Java. Stage `web` builds `web/dist`; stage `jdk`
 builds the jars with the Gradle wrapper; final stages `cli` and `api` copy their jar onto
@@ -337,7 +367,7 @@ builds the jars with the Gradle wrapper; final stages `cli` and `api` copy their
 project inside. Versions are pinned, services have healthchecks, and dependants wait for
 `service_healthy`.
 
-**Testcontainers** tests in the `build` container start Elasticsearch and SeaweedFS through
+**Testcontainers** tests in the `build` container start PostgreSQL and SeaweedFS through
 the mounted Docker socket; `TESTCONTAINERS_HOST_OVERRIDE` points them at the host.
 
 **Makefile:** `make up`, `make down`, `make build`, `make test`, `make run DATE=...`,
@@ -353,7 +383,7 @@ the mounted Docker socket; `TESTCONTAINERS_HOST_OVERRIDE` points them at the hos
 | Property (jqwik) | `diff(A, A)` is empty; applying `diff(A, B)` to A gives B for tracked fields; event ids stable and unique per capture |
 | Idempotency | running a capture twice gives byte-identical objects |
 | Retention | `prune` on fixtures keeps the configured captures and never the wrong ones |
-| Integration (Testcontainers) | S3 storage against SeaweedFS; indexer and API queries against Elasticsearch |
+| Integration (Testcontainers) | S3 storage against SeaweedFS; the serving contract suite against PostgreSQL |
 | Web (`@WebMvcTest`) | controllers, validation, error format |
 | Architecture (ArchUnit) | module rules above |
 | dbt | generic and singular tests, Java/SQL diff parity |

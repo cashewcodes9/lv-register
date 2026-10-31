@@ -56,7 +56,7 @@ Differences from Oversee:
 | Pipeline language | Python (pandas) | Java 25 (the job's language). Python only for Dagster and dbt |
 | Derived data | port calls from positions | company events from the diff of two consecutive weekly snapshots (section 8) |
 | Warehouse | PostgreSQL + dbt-postgres | DuckDB + dbt-duckdb over the Parquet lake; marts written back to S3 as Parquet. No Postgres for data |
-| Serving | PostgreSQL | Elasticsearch |
+| Serving | PostgreSQL | PostgreSQL (`pg_trgm` + `unaccent` search) behind a `serving` port, so an Elasticsearch adapter can replace it later |
 | Dagster | `dagster dev`, schedule stopped | always-on webserver and daemon in Docker, weekly capture schedule that can be switched off and on, Postgres for Dagster's own run storage |
 | Monitoring | JSON logs with run id | JSON logs with run id, Dagster asset checks, freshness checks and failure sensor. Metrics, traces, dashboards and alerts on the roadmap |
 | Spring | none (FastAPI) | Spring Boot 4 for the API only |
@@ -90,8 +90,8 @@ logic lives in Java.
 | Events | JSON Lines per capture in S3 |
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
 | Orchestration | Dagster (webserver, daemon, Postgres run storage) with dagster-dbt and dagster-docker. Java steps run in the `cli` image through Dagster Pipes |
-| Search | Elasticsearch 8 |
-| Tests | JUnit 5, AssertJ, jqwik (property tests), Testcontainers (Elasticsearch, SeaweedFS), ArchUnit; pytest for Dagster definitions; dbt data tests |
+| Serving store | PostgreSQL 18 (one instance, databases `lv_serving` and `dagster`), plain JDBC + HikariCP, Flyway migrations; search with `pg_trgm` + `unaccent`. Access only through the `serving` port (Elasticsearch is a later adapter, see ROADMAP.md) |
+| Tests | JUnit 5, AssertJ, jqwik (property tests), Testcontainers (PostgreSQL, SeaweedFS), ArchUnit; pytest for Dagster definitions; dbt data tests |
 | Logging | SLF4J + Logback, JSON to stdout, run id, Dagster run id, step and partition date in MDC |
 | Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
 | Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker, git and make |
@@ -118,7 +118,7 @@ these choices in ADRs.
 7. dbt models and tests over the lake and events: statistics, value feature, invariants.
 8. Dagster orchestration: a partition per capture, weekly schedule with an off/on switch,
    asset checks, retries, reprocessing from the lake.
-9. Index companies, events and run reports into Elasticsearch.
+9. Load companies, events and run reports into the serving store (PostgreSQL).
 10. One value feature (section 10).
 11. Spring Boot read API and React frontend to explore the data and check pipeline health.
 12. Retention, so storage stays bounded on an always-on machine (section 6.2).
@@ -145,7 +145,7 @@ data.gov.lv  (cache, sha256 manifest)   (DuckDB, unfiltered, source sha)     (Ja
                                                                               │
                          quality ─► s3://lv-lake/reports/date=…  ─────────────┤
                                                                               ▼
-                              Elasticsearch (companies, events, runs, stats, features) ─► Spring Boot API ─► React
+                    serving store: PostgreSQL (companies, events, runs, stats, features) ─► Spring Boot API ─► React
 ```
 
 Every pipeline step is a function from input objects to output objects, so each step can be
@@ -173,18 +173,17 @@ project builds the same on any machine and in CI.
 | Compose service | Image | Purpose |
 |---|---|---|
 | `lake` | `chrislusf/seaweedfs` (pinned) | S3 API (:8333) and file browser (:8888); buckets `lv-raw`, `lv-lake`, `lv-marts` |
-| `elasticsearch` | `elasticsearch:8.x`, single node, security off locally | serving store, data volume |
+| `postgres` | `postgres:18` (pinned) | serving store (database `lv_serving`) and Dagster storage (database `dagster`), data volume |
 | `build` | `eclipse-temurin:25-jdk` | runs the Gradle wrapper: `./gradlew build`, tests. Gradle cache in a named volume |
 | `cli` | `Dockerfile` target `cli` (JRE 25 + CLI jar) | runs pipeline steps; launched by Dagster or `docker compose run` |
 | `api` | `Dockerfile` target `api` (JRE 25 + Spring Boot jar with `web/dist`) | API and frontend on one port |
 | `web-dev` | `node:22` (LTS) | Vite dev server with hot reload; `npm` commands; `node_modules` in a named volume |
-| `dagster-postgres` | `postgres:16` | Dagster run, event log and schedule storage only |
 | `dagster-code` | `orchestration/Dockerfile` (Python, Dagster, dbt-duckdb, dbt project) | Dagster code location (gRPC); launches `cli` containers through the Docker socket |
 | `dagster-webserver` | same image | Dagster UI (:3000): asset graph, runs, backfills, checks |
 | `dagster-daemon` | same image | schedules, sensors, run queue, retries |
 | `duckdb` | small image with the DuckDB CLI | ad-hoc SQL over the lake (Milestone 1 and debugging) |
 
-- Compose profiles keep the default stack small: `core` (lake, elasticsearch, api),
+- Compose profiles keep the default stack small: `core` (lake, postgres, api),
   `orchestration` (Dagster services), `dev` (web-dev). `make up` starts these long-running
   profiles. One-shot containers (build, cli, duckdb) are in profile `tools` and run only
   with `docker compose run`.
@@ -232,7 +231,7 @@ This is a demo, so it captures **once a week**, not every day.
 | Lake snapshots | the latest 12 captures (about 3 months) | `diff` only needs the previous capture; older history lives in the events |
 | Events, reports | forever | small: only changes and counts |
 | Marts | rebuilt each run | derived |
-| Elasticsearch | latest company state, all events, all runs | upserts, grows only with events |
+| Serving (PostgreSQL) | latest company state, all events, all runs | upserts, grows only with events |
 | Dagster run history | 90 days | Dagster's run retention setting |
 
 - `prune` runs as the last step of every capture. It never deletes the latest capture, or a
@@ -273,7 +272,9 @@ lv-register/
     normalize/    lake rows -> domain, legal form + status mapping, dropped-row counts
     diff/         snapshot comparison -> events, deterministic event ids
     quality/      run record, quality report
-    index/        Elasticsearch writer (upserts) and read queries
+    index/        indexing step: loads companies, events, runs and marts through `ServingWriter`
+    serving/      serving port: `ServingWriter`, `ServingQueries`, read records, contract tests
+    serving-postgres/  PostgreSQL adapter: plain JDBC, Flyway migrations, `pg_trgm` search
     pipes/        Dagster Pipes messages from the CLI (materializations, checks, logs)
     cli/          Picocli commands, Main with manual wiring
     api/          Spring Boot read API under /api: controllers, DTO records, Bucket4j rate limit,
@@ -374,7 +375,8 @@ Compare the previous capture (A) with the current one (B), keyed by registration
   Re-running a capture writes the same ids.
 - Objects are written to a temporary key and copied into place, so a failed run never leaves
   a half-written object under the final key.
-- Elasticsearch document id = company reg number, event id or run id, so indexing is an upsert.
+- Serving keys = company reg number, event id or run id, so loading is an upsert
+  (`INSERT ... ON CONFLICT DO UPDATE` in PostgreSQL; the document id in a later Elasticsearch adapter).
 - dbt marts are full rebuilds from the lake and events, so re-running gives the same result.
 - Property tests (jqwik):
   - `diff(A, A)` is always empty.
@@ -401,7 +403,7 @@ Compare the previous capture (A) with the current one (B), keyed by registration
    already covers.
 
 Default choice: feature 1, as a dbt mart (`feat_mass_registration_addresses`) with its own
-tests, indexed into Elasticsearch for the API.
+tests, loaded into the serving store for the API.
 
 ## 11. Run record and data quality report
 
@@ -420,7 +422,7 @@ Per run, write `s3://lv-lake/reports/date=YYYY-MM-DD/report.json` with:
 The same figures go to two places:
 - Dagster: materialization metadata and asset checks (via Pipes), so a bad day is visible in
   the asset graph and can block downstream assets.
-- Elasticsearch (`runs` index), so the API and frontend show pipeline health.
+- The serving store (`runs` table), so the API and frontend show pipeline health.
 
 ### 11.1 Monitoring in the MVP
 
@@ -431,7 +433,7 @@ missed or broken capture:
 - Dagster asset checks (warn or block), freshness checks on the weekly assets, a run failure
   sensor (logs, plus an optional webhook URL in `.env`), and retry policies with backoff on
   network steps.
-- Actuator health for the API, with an Elasticsearch indicator; healthchecks on every service.
+- Actuator health for the API, with a database indicator; healthchecks on every service.
 - The frontend Pipeline page for run history and quality reports.
 
 ## 12. Personal data
@@ -443,7 +445,7 @@ Officers and beneficial owners are personal data.
 - Raw data, the lake and the marts are never committed. Tests use small, anonymized fixtures.
 - Logs and Dagster metadata never contain person names or person keys. They carry
   registration numbers and counts only. A test checks the CLI log output on a fixture.
-- Dagster, SeaweedFS and Elasticsearch are bound to localhost and not exposed.
+- Dagster, SeaweedFS and PostgreSQL are bound to localhost and not exposed.
 - Note in the README and the source assessment that EU rules on public BO access may narrow
   Latvia's currently open model.
 
@@ -465,7 +467,7 @@ Officers and beneficial owners are personal data.
 - Errors as RFC 7807 ProblemDetail via `@RestControllerAdvice`.
 - Bucket4j rate limit per IP, simple configurable default.
 - CORS allowed for the Vite dev server only.
-- Actuator health (with Elasticsearch indicator), springdoc-openapi (Swagger UI). Generate TypeScript types for the frontend from the OpenAPI
+- Actuator health (with database indicator), springdoc-openapi (Swagger UI). Generate TypeScript types for the frontend from the OpenAPI
   spec.
 - Caffeine cache for stats and search.
 
@@ -505,7 +507,7 @@ Rules:
 ### Milestone 2: Project setup + domain
 
 - [x] Gradle multi-module, Java 25 toolchain
-- [x] Multi-stage `Dockerfile`; compose services `lake`, `elasticsearch`, `build`, `cli`,
+- [x] Multi-stage `Dockerfile`; compose services `lake`, `postgres`, `build`, `cli`,
       `duckdb` with healthchecks and profiles; `.env.example`; `Makefile`
 - [x] `make build` runs the Gradle build in the `build` container from a clean clone
 - [x] GitHub Actions CI (build + test)
@@ -531,8 +533,9 @@ Rules:
 
 ### Milestone 5: Quality + index
 - [ ] Run record and quality report (section 11)
-- [ ] Elasticsearch mappings for companies, events and runs
-- [ ] Indexer with upserts, tested with Testcontainers
+- [ ] `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite;
+      `serving-postgres`: Flyway schema for companies, events and runs (`pg_trgm`, `unaccent`)
+- [ ] Indexer with upserts through the port; Postgres adapter passes the contract tests (Testcontainers)
 - [ ] Testcontainers working from the `build` container
 - [ ] Test: no person data in CLI logs on a fixture run
 
@@ -544,11 +547,11 @@ Rules:
 - [ ] SQL diff model and the parity test against the Java events (section 9)
 - [ ] Singular tests from section 9; exposures for the API and frontend
 - [ ] `make dbt-build`, `make dbt-docs` (lineage graph)
-- [ ] Indexer loads stats and feature marts into Elasticsearch
+- [ ] Indexer loads stats and feature marts into the serving store
 
 ### Milestone 7: Dagster orchestration
-- [ ] `orchestration/` Python project and image; compose services `dagster-postgres`,
-      `dagster-code`, `dagster-webserver`, `dagster-daemon`
+- [ ] `orchestration/` Python project and image; `dagster` database in the `postgres` service;
+      compose services `dagster-code`, `dagster-webserver`, `dagster-daemon`
 - [ ] `pipes` module: the CLI reports materializations, metadata and check results to Dagster
 - [ ] Assets with one partition per capture date: `ur_raw_files` ─► `lake_snapshot` ─►
       `company_events` (reads the previous capture from the lake) ─► `quality_report` ─►
@@ -565,12 +568,12 @@ Rules:
 - [ ] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
-- [ ] Spring Boot 4 app in `api/`, depending on the pipeline modules
+- [ ] Spring Boot 4 app in `api/`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
 - [ ] All endpoints from section 13
 - [ ] DTO records, validation, paging, ProblemDetail errors
 - [ ] Bucket4j rate limit, CORS for Vite dev server
 - [ ] Actuator health, springdoc-openapi, Caffeine cache
-- [ ] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against an Elasticsearch
+- [ ] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against a PostgreSQL
       Testcontainer
 
 ### Milestone 9: React frontend
@@ -592,6 +595,7 @@ Rules:
       4. Spring Boot 4 only at the API edge, plain Java pipeline
       5. Dagster orchestrating Java steps through Pipes
       6. dbt-duckdb over the lake instead of a warehouse database
+      7. PostgreSQL as the serving store behind a port, Elasticsearch as a later adapter
 - [ ] Finish `docs/source-assessment.md`
 - [ ] Short demo GIF of the frontend
 
@@ -601,7 +605,7 @@ After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch i
 
 - `make build` (Gradle in the `build` container) passes from a clean clone, including the
   ArchUnit boundary test. The host needs only Docker, git and make.
-- `make up` starts the whole stack: lake, Elasticsearch, Dagster, API and frontend.
+- `make up` starts the whole stack: lake, PostgreSQL, Dagster, API and frontend.
 - The Dagster weekly schedule runs the full pipeline for a capture without manual steps, and the
   asset graph shows every asset and check green.
 - `make run DATE=<d>` (`lv-register run --date <d>` in the `cli` container) runs the Java

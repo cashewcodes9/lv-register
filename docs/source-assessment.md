@@ -246,7 +246,8 @@ Sunday-night export and stays as planned.
 The dev VM's CPU (QEMU, no AVX) cannot run DuckDB 2.0.0 binaries (illegal instruction).
 DuckDB is pinned to **1.4.5 (LTS line)** in the CLI image; the DuckDB JDBC driver and
 dbt-duckdb must use the same 1.4.x line. The VM also has 1 CPU and 3 GB RAM, which is tight
-for Elasticsearch + Dagster + Gradle at the same time.
+for the serving store + Dagster + Gradle at the same time (since raised to 4 GB; serving moved
+from Elasticsearch to PostgreSQL on 2026-10-31).
 
 ## 5. Sizes and retention
 
