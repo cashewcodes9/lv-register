@@ -1,12 +1,12 @@
 # Roadmap
 
 What comes after the MVP in [PLAN.md](PLAN.md), in order. The MVP keeps the minimum needed
-to notice a missed or broken day: JSON logs with run ids, Dagster asset checks, freshness
+to notice a missed or broken capture: JSON logs with run ids, Dagster asset checks, freshness
 checks and a run failure sensor, Actuator health, and the frontend's Pipeline page.
 
 ## 1. Observability and monitoring
 
-Why: UR publishes only the current state, so a day that is not captured is lost for good.
+Why: UR publishes only the current state, so a capture that is missed is lost for good.
 Dagster shows which asset broke, but not trends over weeks, and it cannot alert when nothing
 ran at all.
 
@@ -24,13 +24,14 @@ ran at all.
   become metric labels and span attributes too. API logs carry the trace id. Grafana links
   logs to traces and Dagster runs.
 - Pipeline metrics: rows read, kept and dropped per file and rule; events per type; step
-  duration; bytes downloaded; last successful partition date per step; documents indexed.
+  duration; bytes downloaded; last successful capture date per step; storage per bucket;
+  documents indexed.
 
 **Dashboards** (JSON in `docker/grafana/dashboards/`, provisioned):
 
 | Dashboard | Shows |
 |---|---|
-| Pipeline health | last successful day per step, run duration, failures, freshness |
+| Pipeline health | last successful capture per step, run duration, failures, freshness, storage |
 | Data quality | rows kept and dropped per rule, orphans, unmapped values, events per type with thresholds |
 | API | request rate, error rate, p50/p95/p99 latency, rate-limit rejections, cache hits |
 | Infrastructure | Elasticsearch health, heap and disk; SeaweedFS storage; JVM; Postgres; container CPU and memory |
@@ -39,11 +40,11 @@ ran at all.
 
 | Alert | Why it matters |
 |---|---|
-| no successful `download` for today by the deadline | the day is lost for good |
+| no successful capture in 8 days while the schedule is on | that week is lost for good |
 | a step failed after retries | data stops flowing |
 | drop share above 1% for a file | source format changed or a rule is wrong |
 | event type above its spike threshold | usually a parsing problem |
-| orphans or unmapped values grew day over day | source drift |
+| orphans or unmapped values grew since the previous capture | source drift |
 | API 5xx above 1% or p95 above 500 ms for 10 min | users affected |
 | Elasticsearch not green, or a volume above 80% disk | serving at risk |
 

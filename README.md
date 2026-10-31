@@ -1,6 +1,6 @@
 # lv-register
 
-A pipeline that turns the daily open data of the Latvian Register of Enterprises
+A pipeline that turns the open data of the Latvian Register of Enterprises
 (Uzņēmumu reģistrs) into clean company snapshots and a feed of change events, with a
 read-only API and a React app to explore and check the data.
 
@@ -19,7 +19,8 @@ Stack:
 - **Pipeline:** Java 25, Gradle, Picocli; DuckDB over a Parquet lake on S3-compatible
   storage (SeaweedFS)
 - **Models and data tests:** dbt (dbt-duckdb)
-- **Orchestration:** Dagster: daily partitions, schedule, asset checks, backfills
+- **Orchestration:** Dagster: weekly capture schedule with an off/on switch, asset checks,
+  reprocessing from the lake
 - **Serving:** Elasticsearch, Spring Boot 4 (API only), React + TypeScript
 
 Everything builds and runs in Docker; the host needs only Docker and git.

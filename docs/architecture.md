@@ -1,6 +1,6 @@
 # Architecture
 
-lv-register turns the daily open data of the Latvian Register of Enterprises (Uzņēmumu
+lv-register turns the open data of the Latvian Register of Enterprises (Uzņēmumu
 reģistrs, UR) into typed company snapshots and a feed of change events, then serves them
 through a read-only API and a React app. Dagster schedules and checks every step, dbt models
 and tests the data in SQL.
@@ -14,7 +14,7 @@ Scope and milestones are in [PLAN.md](../PLAN.md). Column names and value sets c
 
 ```
 UR CSVs ─► s3://lv-raw ─► s3://lv-lake ─────► normalize ─► Snapshot ─► diff ─► s3://lv-lake/events
-data.gov.lv  as published   Parquet per file    Java, pure    typed       Java    JSON Lines per day
+data.gov.lv  as published   Parquet per file    Java, pure    typed       Java    JSON Lines per capture
              + manifest     and day, unfiltered               records       │
                                    │                                        │
                                    └────────────► dbt (DuckDB) ◄────────────┘
@@ -30,8 +30,8 @@ data.gov.lv  as published   Parquet per file    Java, pure    typed       Java  
 |---|---|---|---|
 | Raw | `s3://lv-raw/date=YYYY-MM-DD/` | UR files as published, `manifest.json` (name, URL, sha256, size, fetched at) | `ingest` |
 | Lake | `s3://lv-lake/<file>/date=YYYY-MM-DD/<file>.parquet` | every row and column, typed by DuckDB, source sha256 in key-value metadata | `lake` |
-| Snapshot | in memory | `Snapshot` record: companies and roles of one day, keyed by registration number | `normalize` |
-| Events | `s3://lv-lake/events/date=YYYY-MM-DD/events.jsonl` | `diff(snapshot[d-1], snapshot[d])`, sorted by event id | `diff` |
+| Snapshot | in memory | `Snapshot` record: companies and roles of one capture, keyed by registration number | `normalize` |
+| Events | `s3://lv-lake/events/date=YYYY-MM-DD/events.jsonl` | `diff(previous capture, this capture)`, sorted by event id | `diff` |
 | Reports | `s3://lv-lake/reports/date=YYYY-MM-DD/report.json` | run record and quality report | `quality` |
 | Marts | `s3://lv-marts/<model>.parquet` | dbt marts: companies, events, stats, value feature | dbt |
 | Serving | Elasticsearch | latest company state, events, runs, stats, features | `index` |
@@ -42,11 +42,11 @@ AWS SDK v2 `S3Client` with an endpoint override and path-style access; DuckDB an
 credentials moves everything to AWS S3. A local-directory implementation of the `storage`
 interface exists for unit tests.
 
-**History:** UR publishes only the current state. The lake is the only copy of past days, so
-reprocessing and backfills always read from the lake, never from UR. A day that is not
-downloaded on the day is lost, which is why Dagster checks freshness every day.
+**History:** UR publishes only the current state. The lake is the only copy of past states, so
+reprocessing always reads from the lake, never from UR. The demo captures once a week;
+changes between two captures appear as one net change.
 
-DuckDB reads all days of a file as one table:
+DuckDB reads all captures of a file as one table:
 
 ```sql
 SELECT date, count(*) FROM read_parquet('s3://lv-lake/register/*/*.parquet', hive_partitioning = true)
@@ -57,7 +57,7 @@ Nothing under `data/` or in the buckets is committed: it contains personal data.
 
 ## Pipeline steps
 
-Each step reads objects and writes objects for one day, so it can run alone. The CLI is
+Each step reads objects and writes objects for one capture, so it can run alone. The CLI is
 `lv-register <step> --date YYYY-MM-DD`. Dagster runs the same commands in the `cli` image.
 
 1. **download** (`ingest`): fetch each UR file with `java.net.http.HttpClient`, computing
@@ -74,8 +74,8 @@ Each step reads objects and writes objects for one day, so it can run alone. The
      `Other` and are counted, never dropped silently
    - drop rows that break a rule, counted per rule; drop duplicate registration numbers,
      counted
-4. **diff** (`diff`): compare yesterday's snapshot A with today's B (rules below). Writes the
-   day's events.
+4. **diff** (`diff`): compare the previous capture A with this capture B (rules below). Writes the
+   capture's events.
 5. **quality** (`quality`): run record and quality report (PLAN.md section 11).
 6. **index** (`index`): upsert companies, events, the run report, and the stats and feature
    marts into Elasticsearch.
@@ -98,7 +98,7 @@ dbt runs between `quality` and `index` (see Orchestration).
 
 - Comparison runs on normalized values, so formatting noise does not create events.
 - The first snapshot is the baseline and creates no events.
-- One company can produce several events on one day.
+- One company can produce several events in one capture.
 - `CompanyEvent` is a sealed interface. Handlers use an exhaustive `switch`, so a new event
   type fails compilation until every handler covers it.
 - The Java diff is the source of truth. dbt computes the same diff in SQL; a dbt test
@@ -106,16 +106,16 @@ dbt runs between `quality` and `index` (see Orchestration).
 
 ## Idempotency
 
-Re-running any step for a day leaves every output unchanged.
+Re-running any step for a capture leaves every output unchanged.
 
 | Layer | Mechanism |
 |---|---|
 | Raw | skip a file whose sha256 is in the manifest; write via temp key + copy |
-| Lake | skip a day whose Parquet metadata has the same source sha256 |
+| Lake | skip a capture whose Parquet metadata has the same source sha256 |
 | Events | event id = `sha256(regNumber \| eventType \| snapshotDate \| canonicalPayload)`; objects sorted by id; temp key + copy |
 | Marts | dbt full rebuild from lake and events |
 | Elasticsearch | document id = registration number, event id or run id: upserts |
-| Dagster | one partition per day; re-materializing a partition reruns the idempotent steps |
+| Dagster | one partition per capture; re-materializing a partition reruns the idempotent steps |
 
 Canonical payloads are JSON with sorted keys and sorted sets, so the same change always gives
 the same bytes and the same id.
@@ -163,7 +163,7 @@ The sketch in PLAN.md section 7 is final only after the source assessment. Fixed
 - Records only, no setters, no `null`: optional values are `Optional<T>`.
 - Variants are sealed interfaces: `LegalForm`, `CompanyStatus`, `RoleType`, `CompanyEvent`.
 - Invariants live in compact constructors, for example a valid `RegNumber` format.
-- `Snapshot` is the full state of one day. `diff` is a pure function of two snapshots.
+- `Snapshot` is the full state at one capture. `diff` is a pure function of two snapshots.
 
 **Persons:** the open data may not give a stable person id. `PersonKey` is built from what
 the data offers, documented in the source assessment and ADR 3. Matching is conservative: a
@@ -180,22 +180,22 @@ from S3, so there is no warehouse database to load. Marts are written back to S3
 | Sources | Parquet and JSON Lines in S3 | one per MVP lake file, `events`, `reports` |
 | Staging | views | `stg_<file>`: rename and cast only, one per source |
 | Intermediate | views | `int_company_roles` (officers, members, stockholders, BOs as one role set), `int_snapshot_diff` (the diff in SQL) |
-| Marts | Parquet in `s3://lv-marts` | `dim_companies` (latest state), `fct_company_events`, `agg_companies_by_form_status_region`, `agg_events_daily`, `feat_mass_registration_addresses` |
+| Marts | Parquet in `s3://lv-marts` | `dim_companies` (latest state), `fct_company_events`, `agg_companies_by_form_status_region`, `agg_events_per_capture`, `feat_mass_registration_addresses` |
 
 ```
 lake files ─► stg_* ─┬─► int_company_roles ─┬─► dim_companies ─┬─► agg_companies_by_form_status_region
                      │                      │                  └─► feat_mass_registration_addresses
                      └─► int_snapshot_diff ─┤
-events ─────► stg_events ───────────────────┴─► fct_company_events ─► agg_events_daily
+events ─────► stg_events ───────────────────┴─► fct_company_events ─► agg_events_per_capture
 ```
 
 **Tests:**
 - generic: unique and not-null keys, `relationships` from roles to companies (orphans),
   `accepted_values` for mapped legal forms and statuses
 - singular, in `transform/tests/`:
-  - `int_snapshot_diff` equals the Java events for every day (parity)
-  - no events on the baseline day
-  - event ids unique per day
+  - `int_snapshot_diff` equals the Java events for every capture (parity)
+  - no events on the baseline capture
+  - event ids unique per capture
   - every company in `dim_companies` appears in the latest lake snapshot
 - severity: parity and key tests fail the build; drift checks (unmapped values) warn
 
@@ -224,30 +224,52 @@ metadata (rows, sha256, URIs, dropped per rule) and asset check results. The Dag
 holds no pipeline logic. The official Java Pipes library is used if it fits; otherwise the
 module writes the small JSON message protocol itself.
 
-**Assets** (daily partitions, start = first captured day):
+**Assets** (one partition per capture date; captures are weekly, see below):
 
 | Asset | Runs | Checks |
 |---|---|---|
-| `ur_raw_files` | `cli download`, retry with backoff | file count and sizes vs previous day |
+| `ur_raw_files` | `cli download`, retry with backoff | file count and sizes vs previous capture |
 | `lake_snapshot` | `cli lake` | schema unchanged vs source assessment (blocking) |
-| `company_events` | `cli diff`; depends on `lake_snapshot` for d and d−1 (`TimeWindowPartitionMapping(start_offset=-1)`) | event spike per type (blocking above a hard limit) |
+| `company_events` | `cli diff`; reads the previous capture from the lake, whatever its date | event spike per type (blocking above a hard limit) |
 | `quality_report` | `cli quality` | drop share ≤ 1%, orphans and unmapped values not growing |
 | dbt models | `dbt build` via dagster-dbt, dbt tests as asset checks | all dbt tests |
 | `search_index` | `cli index` | document counts match the marts |
+| `retention` | `cli prune` | total storage below `STORAGE_WARN_GB` (warn) |
 
-- **Jobs:** `daily_pipeline` (all assets for one partition); `rebuild_marts` (dbt only).
-- **Schedule:** `daily_pipeline` once a day, Europe/Riga time, set from Milestone 1's finding
-  of when UR publishes. On by default.
-- **Freshness:** freshness checks on `ur_raw_files` and `search_index`, so a missed day turns
-  red in the UI.
+- **Jobs:** `capture_pipeline` (all assets for one capture); `rebuild_marts` (dbt only).
+- **Schedule:** `weekly_capture`, Mondays 06:00 Europe/Riga (configurable, set after Milestone
+  1). It adds the capture date as a new partition and runs `capture_pipeline`. `make
+  capture-now` does the same on demand.
+- **Freshness:** a freshness check on `ur_raw_files` turns red when no capture succeeded in 8
+  days while the schedule is on.
 - **Sensors:** run failure sensor logs the failure and posts to an optional webhook (`.env`).
-- **Backfills:** re-materializing past partitions reads from the lake. `ur_raw_files` cannot
-  be backfilled for past days; its partitions only exist for days actually captured.
+- **Reprocessing:** re-materializing a past capture reads from the lake. `ur_raw_files`
+  cannot be re-fetched for past dates; partitions only exist for captures actually made.
 - **Blocking checks** stop downstream assets, so a broken file never reaches Elasticsearch.
+
+## Captures, retention and on/off
+
+Details and defaults are in PLAN.md section 6.2.
+
+```
+weekly_capture (Mon 06:00) ─┐
+make capture-now ───────────┴─► capture_pipeline(date) ─► … ─► search_index ─► retention (prune)
+
+make capture-off / capture-on   schedule state in Dagster; stack keeps running
+make down / make up             all containers; data stays in volumes
+```
+
+- **Diff across gaps:** a capture is compared with the previous capture in the lake. Each
+  event carries both snapshot dates (`observedBetween`), and the report records the gap.
+- **Retention:** raw CSVs for the latest 2 captures, lake snapshots for the latest 12, events
+  and reports forever. `prune` never deletes the latest capture or a snapshot whose events are
+  missing.
+- **Restart policy:** `unless-stopped`, so a running stack survives a reboot and a stopped one
+  stays stopped.
 
 ## Logging and monitoring
 
-The MVP keeps what is needed to notice a missed or broken day. Metrics, traces, dashboards
+The MVP keeps what is needed to notice a missed or broken capture. Metrics, traces, dashboards
 and alerts come later ([ROADMAP.md](../ROADMAP.md), section 1).
 
 - **Logs:** every container logs JSON to stdout. Pipeline lines carry `run_id`,
@@ -319,7 +341,8 @@ project inside. Versions are pinned, services have healthchecks, and dependants 
 the mounted Docker socket; `TESTCONTAINERS_HOST_OVERRIDE` points them at the host.
 
 **Makefile:** `make up`, `make down`, `make build`, `make test`, `make run DATE=...`,
-`make dbt-build`, `make dbt-docs`, `make dagster`, `make grafana`, `make web-dev`,
+`make capture-now`, `make capture-off`, `make capture-on`, `make status`, `make dbt-build`,
+`make dbt-docs`, `make dagster`, `make web-dev`,
 `make duckdb`. CI runs the same images and targets.
 
 ## Testing
@@ -327,8 +350,9 @@ the mounted Docker socket; `TESTCONTAINERS_HOST_OVERRIDE` points them at the hos
 | Test | Checks |
 |---|---|
 | Unit (JUnit 5, AssertJ) | each normalizer rule and mapping, each record invariant |
-| Property (jqwik) | `diff(A, A)` is empty; applying `diff(A, B)` to A gives B for tracked fields; event ids stable and unique per day |
-| Idempotency | running a day twice gives byte-identical objects |
+| Property (jqwik) | `diff(A, A)` is empty; applying `diff(A, B)` to A gives B for tracked fields; event ids stable and unique per capture |
+| Idempotency | running a capture twice gives byte-identical objects |
+| Retention | `prune` on fixtures keeps the configured captures and never the wrong ones |
 | Integration (Testcontainers) | S3 storage against SeaweedFS; indexer and API queries against Elasticsearch |
 | Web (`@WebMvcTest`) | controllers, validation, error format |
 | Architecture (ArchUnit) | module rules above |
@@ -339,7 +363,7 @@ the mounted Docker socket; `TESTCONTAINERS_HOST_OVERRIDE` points them at the hos
 ## Open questions
 
 - **Which UR files are in the MVP:** Milestone 1.
-- **When UR publishes each day:** Milestone 1; sets the schedule and the freshness deadline.
+- **When UR publishes updates:** Milestone 1; sets the weekly schedule time.
 - **Person key:** depends on what the officer and owner files contain.
 - **Dagster Pipes from Java:** the official Java library or a small own implementation;
   decided in Milestone 7.

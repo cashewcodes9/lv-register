@@ -24,9 +24,9 @@ the MVP; see [ROADMAP.md](ROADMAP.md).
   - Open data portal: https://data.gov.lv/dati/lv/organization/ur
   - UR open data info: https://ur.gov.lv/en/specialized-information/open-data
   - Public search (for spot checks): https://info.ur.gov.lv
-- UR publishes only the current state. Past days cannot be downloaded again, so the lake is
-  the only history this project has. A missed day is lost for good, which makes scheduling
-  and freshness monitoring essential, not optional.
+- UR publishes only the current state. Past states cannot be downloaded again, so the lake is
+  the only history this project has. This is a demo, so it captures **once a week**, not
+  daily (section 6.2). Changes between two captures show up as one net change.
 
 ## 2. Reference design: Oversee
 
@@ -34,7 +34,7 @@ This project re-applies the architecture of my Python project Oversee
 (github.com/cashewcodes9/Oversee). Read its README.md, docs/architecture.md and ROADMAP.md
 before starting. Keep these patterns:
 
-- Raw files cached by day, fingerprinted with SHA-256, skipped if already processed.
+- Raw files cached per capture, fingerprinted with SHA-256, skipped if already processed.
 - S3-compatible object storage (SeaweedFS locally) for raw files and the lake. The same code
   works against AWS S3 by changing configuration only.
 - Hive-partitioned Parquet lake: `s3://lv-lake/<file>/date=YYYY-MM-DD/<file>.parquet`,
@@ -43,9 +43,9 @@ before starting. Keep these patterns:
 - Cleaning as pure functions that return (rows, droppedCountsByRule).
 - A run record per pipeline run (status, rows read, rows written, error) and a quality log of
   rows dropped per rule. Every log line carries the run id.
-- Idempotent writes everywhere: re-running a day must not create anything new.
+- Idempotent writes everywhere: re-running a capture must not create anything new.
 - dbt for SQL models, with generic and singular data tests, docs and lineage.
-- Dagster for orchestration: software-defined assets, daily partitions, asset checks,
+- Dagster for orchestration: software-defined assets, partitions, asset checks,
   backfills, schedules. Dagster calls the same code as the CLI.
 - A Makefile and a Docker-only path.
 
@@ -54,10 +54,10 @@ Differences from Oversee:
 | Topic | Oversee | lv-register |
 |---|---|---|
 | Pipeline language | Python (pandas) | Java 25 (the job's language). Python only for Dagster and dbt |
-| Derived data | port calls from positions | company events from the diff of two daily snapshots (section 8) |
+| Derived data | port calls from positions | company events from the diff of two consecutive weekly snapshots (section 8) |
 | Warehouse | PostgreSQL + dbt-postgres | DuckDB + dbt-duckdb over the Parquet lake; marts written back to S3 as Parquet. No Postgres for data |
 | Serving | PostgreSQL | Elasticsearch |
-| Dagster | `dagster dev`, schedule stopped | always-on webserver and daemon in Docker, daily schedule on, Postgres for Dagster's own run storage |
+| Dagster | `dagster dev`, schedule stopped | always-on webserver and daemon in Docker, weekly capture schedule that can be switched off and on, Postgres for Dagster's own run storage |
 | Monitoring | JSON logs with run id | JSON logs with run id, Dagster asset checks, freshness checks and failure sensor. Metrics, traces, dashboards and alerts on the roadmap |
 | Spring | none (FastAPI) | Spring Boot 4 for the API only |
 
@@ -87,7 +87,7 @@ logic lives in Java.
 | HTTP client | java.net.http.HttpClient |
 | Object storage | SeaweedFS (S3 API) locally, AWS S3 compatible. Java uses AWS SDK v2 `S3Client` with endpoint override and path-style access |
 | Lake | Parquet files written and queried with DuckDB (JDBC, `httpfs` extension) |
-| Events | JSON Lines per day in S3 |
+| Events | JSON Lines per capture in S3 |
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
 | Orchestration | Dagster (webserver, daemon, Postgres run storage) with dagster-dbt and dagster-docker. Java steps run in the `cli` image through Dagster Pipes |
 | Search | Elasticsearch 8 |
@@ -109,18 +109,19 @@ these choices in ADRs.
 ## 5. Scope
 
 ### In scope (MVP)
-1. Download the daily UR CSV files, with checksums and raw caching in S3.
-2. Store each day as a Parquet snapshot in the lake.
+1. Download the UR CSV files once a week, with checksums and raw caching in S3.
+2. Store each capture as a Parquet snapshot in the lake.
 3. Parse and normalize into an immutable domain model.
 4. Derive change events by diffing consecutive snapshots.
 5. Idempotent processing at every layer.
 6. Run record and data quality report per run.
 7. dbt models and tests over the lake and events: statistics, value feature, invariants.
-8. Dagster orchestration: daily partitions, daily schedule, asset checks, retries, backfills
-   from the lake.
+8. Dagster orchestration: a partition per capture, weekly schedule with an off/on switch,
+   asset checks, retries, reprocessing from the lake.
 9. Index companies, events and run reports into Elasticsearch.
 10. One value feature (section 10).
 11. Spring Boot read API and React frontend to explore the data and check pipeline health.
+12. Retention, so storage stays bounded on an always-on machine (section 6.2).
 
 ### Out of scope
 - Financial statements (filed with the State Revenue Service, VID). On the roadmap.
@@ -155,6 +156,7 @@ lv-register lake      --date 2026-11-02
 lv-register diff      --date 2026-11-02
 lv-register quality   --date 2026-11-02
 lv-register index     --date 2026-11-02
+lv-register prune     --date 2026-11-02     # apply retention (section 6.2)
 lv-register run       --date 2026-11-02     # all Java steps, without Dagster
 ```
 
@@ -196,9 +198,60 @@ project builds the same on any machine and in CI.
 - Development credentials (SeaweedFS keys, Postgres password) come from
   `.env` (copied from `.env.example`) and are for local use only.
 - A `Makefile` wraps the common commands (`make up`, `make down`, `make build`, `make test`,
-  `make run DATE=...`, `make dbt-build`, `make dbt-docs`, `make dagster`, `make web-dev`,
+  `make run DATE=...`, `make capture-now`, `make capture-off`, `make capture-on`, `make status`,
+  `make dbt-build`, `make dbt-docs`, `make dagster`, `make web-dev`,
   `make duckdb`), as in Oversee.
 - CI uses the same images, so a green CI means a green local build.
+
+### 6.2 Capture schedule, retention and on/off
+
+This is a demo, so it captures **once a week**, not every day.
+
+**Captures:**
+- A capture = one download of every MVP file, keyed by its capture date (`date=YYYY-MM-DD`).
+- The Dagster schedule `weekly_capture` runs every Monday at 06:00 Europe/Riga. Day and time
+  are configuration, adjusted after Milestone 1 finds when UR publishes.
+- `make capture-now` starts a capture at any time, for example to get a second snapshot for
+  testing without waiting a week.
+- `diff` compares a capture with the **previous capture in the lake**, not with "yesterday"
+  or "last week". If captures were skipped, the diff spans the gap, and the report records
+  both dates and the gap in days.
+- Every event records both snapshot dates (`observedBetween`). The event date is when the
+  change was seen, not when it happened. Where the source has its own date (registration,
+  termination), that date is kept too.
+- Limitation, stated in the README: a change that is undone within one week, or a company
+  registered and terminated within one week, is not visible.
+
+**Retention** (all values in `.env`):
+
+| Data | Kept | Why |
+|---|---|---|
+| Raw CSVs | the latest 2 captures | the lake holds the same rows; the manifest keeps every sha256 |
+| Lake snapshots | the latest 12 captures (about 3 months) | `diff` only needs the previous capture; older history lives in the events |
+| Events, reports | forever | small: only changes and counts |
+| Marts | rebuilt each run | derived |
+| Elasticsearch | latest company state, all events, all runs | upserts, grows only with events |
+| Dagster run history | 90 days | Dagster's run retention setting |
+
+- `prune` runs as the last step of every capture. It never deletes the latest capture, or a
+  snapshot whose events have not been written.
+- The quality report records the size of each bucket. A Dagster check warns when the total
+  is above `STORAGE_WARN_GB` (default 10 GB).
+- Rough size: about 480K entities, so expect tens of MB per snapshot as Parquet. Measured in
+  Milestone 1 and noted in the source assessment.
+
+**Off and on:**
+
+| Switch | Command | Effect |
+|---|---|---|
+| Capture | `make capture-off`, `make capture-on` | stops or starts the weekly schedule (stored in Dagster); the stack and UI keep running |
+| Whole stack | `make down`, `make up` | stops or starts all containers; data stays in Docker volumes |
+| Status | `make status` | containers, schedule state, last capture date, storage use |
+
+- Services use `restart: unless-stopped`, so a running stack comes back after a reboot, and a
+  stack stopped with `make down` stays stopped.
+- Turning capture back on does not fill the gap. UR has no history, so the next capture
+  starts again from the current state, and its diff spans the gap.
 
 ### Module layout
 
@@ -273,13 +326,13 @@ sealed interface CompanyEvent permits
 record Cleaned<T>(List<T> rows, Map<String, Long> droppedByRule) {}
 ```
 
-IMPORTANT: before writing domain code, download one day of every file, record the real column
+IMPORTANT: before writing domain code, download one capture of every file, record the real column
 names and value sets in `docs/source-assessment.md`, and only then finalize the model. Do not
 guess column names.
 
 ## 8. Event derivation rules
 
-Compare yesterday's snapshot (A) with today's (B), keyed by registration number:
+Compare the previous capture (A) with the current one (B), keyed by registration number:
 
 | Condition | Event |
 |---|---|
@@ -304,7 +357,7 @@ Compare yesterday's snapshot (A) with today's (B), keyed by registration number:
 - Raw layer: a file with the same sha256 as one already stored is skipped.
 - Lake: writing the same day again with the same source sha256 is a no-op.
 - Event ids are deterministic: `sha256(regNumber | eventType | snapshotDate | canonicalPayload)`.
-  Re-running a day writes the same ids.
+  Re-running a capture writes the same ids.
 - Objects are written to a temporary key and copied into place, so a failed run never leaves
   a half-written object under the final key.
 - Elasticsearch document id = company reg number, event id or run id, so indexing is an upsert.
@@ -313,12 +366,12 @@ Compare yesterday's snapshot (A) with today's (B), keyed by registration number:
   - `diff(A, A)` is always empty.
   - Running the pipeline twice on the same input gives byte-identical output files.
   - Applying the events from `diff(A, B)` to A reproduces B for the tracked fields.
-  - Event ids are stable across runs and unique within a day.
+  - Event ids are stable across runs and unique within a capture.
 - dbt tests on real data:
   - unique and not-null keys; relationships (roles point to known companies)
   - accepted values for mapped legal forms and statuses
-  - singular: the SQL diff equals the Java events for every day (parity)
-  - singular: no events on the baseline day; event ids unique per day
+  - singular: the SQL diff equals the Java events for every capture (parity)
+  - singular: no events on the baseline capture; event ids unique per capture
 - Person matching: the open data may not give a stable person id. Document what is available
   and match conservatively. False merges are worse than missed merges.
 
@@ -341,7 +394,7 @@ tests, indexed into Elasticsearch for the API.
 Per run, write `s3://lv-lake/reports/date=YYYY-MM-DD/report.json` with:
 - run id (and the Dagster run id when launched by Dagster), start/end time, status, error
 - source file names, sha256, sizes
-- rows read and rows kept per file, change vs previous day
+- rows read and rows kept per file, change vs previous capture, days since previous capture
 - rows dropped per cleaning rule
 - missing required fields per column
 - officers or owners pointing to unknown companies (orphans)
@@ -361,7 +414,7 @@ Full observability is on the roadmap (ROADMAP.md). The MVP keeps what is needed 
 missed or broken day:
 - JSON logs to stdout with `run_id`, `dagster_run_id`, `step` and `partition_date` in every
   line, readable with `docker compose logs` and in the Dagster run view.
-- Dagster asset checks (warn or block), freshness checks on the daily assets, a run failure
+- Dagster asset checks (warn or block), freshness checks on the weekly assets, a run failure
   sensor (logs, plus an optional webhook URL in `.env`), and retry policies with backoff on
   network steps.
 - Actuator health for the API, with an Elasticsearch indicator; healthchecks on every service.
@@ -389,7 +442,7 @@ Officers and beneficial owners are personal data.
 | `GET /api/companies/{reg}/events` | Event timeline |
 | `GET /api/companies/{reg}/network` | Company-person graph around one company |
 | `GET /api/events?date=&type=` | Changes feed |
-| `GET /api/stats` | Counts per legal form, status and region; events per day |
+| `GET /api/stats` | Counts per legal form, status and region; events per capture |
 | `GET /api/runs`, `GET /api/runs/{id}` | Pipeline runs and quality reports |
 | `GET /api/features/mass-addresses` | Value feature results |
 
@@ -405,11 +458,11 @@ Officers and beneficial owners are personal data.
 ## 14. Frontend (React)
 
 Pages:
-1. **Overview:** headline stats (companies by legal form and status, events per day).
+1. **Overview:** headline stats (companies by legal form and status, events per capture).
 2. **Search:** company search with a results list.
 3. **Company:** base data, officers and owners, event timeline.
 4. **Network:** company-person graph around one company.
-5. **Changes:** events per day, filter by type.
+5. **Changes:** events per capture, filter by type.
 6. **Pipeline:** runs and quality reports (rows read/kept, dropped per rule, event spikes),
    with a link to the Dagster run.
    This is the "check what we have" view.
@@ -425,10 +478,11 @@ Rules:
 ### Milestone 1: Source exploration
 - [ ] Minimal `docker-compose.yml` with the `duckdb` service for exploring the files; no
       tools installed on the host
-- [ ] Download one day of every UR file
+- [ ] Download one capture of every UR file
 - [ ] Record columns, types, value sets, row counts, encoding, delimiters, quirks in
       `docs/source-assessment.md`
-- [ ] Find out when UR publishes each day's files (sets the schedule and freshness deadline)
+- [ ] Find out when UR publishes updates (sets the weekly schedule time)
+- [ ] Measure file sizes as CSV and as Parquet (sets the retention defaults)
 - [ ] Map each field to a North Data feature (base data, history, representatives,
       shareholders, person networks, segment codes)
 - [ ] Decide which files are in MVP
@@ -456,7 +510,8 @@ Rules:
 - [ ] Snapshot diff for all event types in section 8
 - [ ] Deterministic event ids
 - [ ] Property tests from section 9
-- [ ] Collect two or more real daily snapshots and produce real events
+- [ ] Collect two or more real captures (`make capture-now` a few days apart) and produce real
+      events
 - [ ] Spot-check 5 real events against info.ur.gov.lv
 
 ### Milestone 5: Quality + index
@@ -480,15 +535,18 @@ Rules:
 - [ ] `orchestration/` Python project and image; compose services `dagster-postgres`,
       `dagster-code`, `dagster-webserver`, `dagster-daemon`
 - [ ] `pipes` module: the CLI reports materializations, metadata and check results to Dagster
-- [ ] Daily partitioned assets: `ur_raw_files` ─► `lake_snapshot` ─► `company_events`
-      (depends on the previous day too) ─► `quality_report` ─► dbt models ─► `search_index`
+- [ ] Assets with one partition per capture date: `ur_raw_files` ─► `lake_snapshot` ─►
+      `company_events` (reads the previous capture from the lake) ─► `quality_report` ─►
+      dbt models ─► `search_index` ─► `retention`
 - [ ] Java steps launched in the `cli` image through Dagster Pipes; dbt via dagster-dbt with
       dbt tests as asset checks
 - [ ] Asset checks from the quality report (drop share, orphans, unmapped values, event
-      spikes); blocking checks stop downstream assets
-- [ ] Daily schedule (time from Milestone 1), freshness checks, run failure sensor, retry
-      policy with backoff for `download`
-- [ ] Backfill of past partitions from the lake (not from UR) works from the UI
+      spikes, storage size); blocking checks stop downstream assets
+- [ ] `weekly_capture` schedule (day and time from Milestone 1), freshness check, run failure
+      sensor, retry policy with backoff for `download`
+- [ ] `make capture-now`, `make capture-off`, `make capture-on`, `make status` (section 6.2)
+- [ ] `prune` step and retention settings in `.env`; Dagster run retention 90 days
+- [ ] Reprocessing past captures from the lake (not from UR) works from the UI
 - [ ] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
@@ -529,11 +587,14 @@ After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch i
 - `make build` (Gradle in the `build` container) passes from a clean clone, including the
   ArchUnit boundary test. The host needs only Docker and git.
 - `make up` starts the whole stack: lake, Elasticsearch, Dagster, API and frontend.
-- The Dagster daily schedule runs the full pipeline for a day without manual steps, and the
+- The Dagster weekly schedule runs the full pipeline for a capture without manual steps, and the
   asset graph shows every asset and check green.
 - `make run DATE=<d>` (`lv-register run --date <d>` in the `cli` container) runs the Java
-  steps for a day without Dagster.
-- Re-running any day produces no new events (tested).
+  steps for a capture without Dagster.
+- Re-running any capture produces no new events (tested).
+- `make capture-off` and `make capture-on` switch the schedule; `make down` and `make up` stop
+  and start the stack without losing data.
+- Retention keeps storage under the configured limit (tested on fixtures).
 - `make dbt-build` passes, including the Java/SQL diff parity test.
 - The quality report exists for every run and is visible in Dagster and the frontend.
 - The frontend shows real data for search, company, events, network, pipeline and insights.
