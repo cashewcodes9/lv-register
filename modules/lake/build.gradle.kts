@@ -6,6 +6,7 @@ dependencies {
     api(project(":domain"))
     api(project(":storage"))
     api(project(":ingest"))
+    api(project(":normalize"))
     implementation(libs.duckdb.jdbc)
     implementation(libs.slf4j.api)
 
