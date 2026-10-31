@@ -37,3 +37,4 @@ jackson-databind = { module = "tools.jackson.core:jackson-databind" }
 duckdb-jdbc = { module = "org.duckdb:duckdb_jdbc", version.ref = "duckdb" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
