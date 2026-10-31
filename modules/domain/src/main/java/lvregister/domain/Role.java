@@ -16,7 +16,9 @@ public sealed interface Role {
      * Officer from `officers.csv`.
      *
      * @param position      UR position code (e.g. {@code BOARD_MEMBER}); missing for 29 % of rows
-     * @param governingBody UR governing body code (e.g. {@code EXECUTIVE_BOARD})
+     * @param governingBody UR governing body code (e.g. {@code EXECUTIVE_BOARD}). Both can be
+     *                      missing: UR lists about 12K representatives, mostly of sole
+     *                      proprietorships (IK), with representation rights only
      */
     record Officer(
             RegNumber company,
@@ -30,9 +32,6 @@ public sealed interface Role {
             Checks.notNull(position, "position");
             Checks.notNull(governingBody, "governingBody");
             Checks.notNull(since, "since");
-            if (position.isEmpty() && governingBody.isEmpty()) {
-                throw new IllegalArgumentException("officer needs a position or a governing body");
-            }
         }
     }
 

@@ -46,16 +46,26 @@ class RoleNormalizersTest {
     void officerRowsThatBreakARuleAreDropped() {
         Cleaned<Role.Officer> cleaned = RoleNormalizers.officers(Stream.of(
                 row("at_legal_entity_registration_number", "1", "entity_type", "NATURAL_PERSON", "name", "A", "position", "MEMBER"),
-                row("at_legal_entity_registration_number", CO, "entity_type", "NATURAL_PERSON", "name", "A"),
                 row("at_legal_entity_registration_number", CO, "entity_type", "ROBOT", "name", "A", "position", "MEMBER"),
                 row("at_legal_entity_registration_number", CO, "entity_type", "NATURAL_PERSON", "position", "MEMBER"),
                 row("at_legal_entity_registration_number", CO, "entity_type", "LEGAL_ENTITY", "name", "A", "position", "MEMBER")));
 
         assertThat(cleaned.rows()).isEmpty();
         assertThat(cleaned.droppedByRule()).containsOnly(
-                Map.entry("officers.invalid_company", 1L), Map.entry("officers.no_position", 1L),
-                Map.entry("officers.unknown_entity_type", 1L), Map.entry("officers.missing_name", 1L),
-                Map.entry("officers.invalid_holder_regcode", 1L));
+                Map.entry("officers.invalid_company", 1L), Map.entry("officers.unknown_entity_type", 1L),
+                Map.entry("officers.missing_name", 1L), Map.entry("officers.invalid_holder_regcode", 1L));
+    }
+
+    @Test
+    void representativeWithoutPositionIsKeptAndFlagged() {
+        Cleaned<Role.Officer> cleaned = RoleNormalizers.officers(Stream.of(row("at_legal_entity_registration_number", CO,
+                "entity_type", "NATURAL_PERSON", "name", "Test Person", "rights_of_representation_type", "INDIVIDUALLY")));
+
+        assertThat(cleaned.rows()).singleElement().satisfies(o -> {
+            assertThat(o.position()).isEmpty();
+            assertThat(o.governingBody()).isEmpty();
+        });
+        assertThat(cleaned.flaggedByRule()).containsOnly(Map.entry("officers.no_position", 1L));
     }
 
     @Test

@@ -77,9 +77,10 @@ class ValueRecordsTest {
     }
 
     @Test
-    void officerNeedsPositionOrGoverningBody() {
-        assertThatIllegalArgumentException().isThrownBy(() ->
-                new Role.Officer(REG, PERSON, Optional.empty(), Optional.empty(), Optional.empty()));
+    void officerMayHaveNeitherPositionNorGoverningBody() {
+        var officer = new Role.Officer(REG, PERSON, Optional.empty(), Optional.empty(), Optional.empty());
+        assertThat(officer.position()).isEmpty();
+        assertThatNullPointerException().isThrownBy(() -> new Role.Officer(REG, PERSON, null, Optional.empty(), Optional.empty()));
     }
 
     @Test

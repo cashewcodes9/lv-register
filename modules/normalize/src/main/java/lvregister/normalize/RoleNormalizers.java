@@ -45,7 +45,7 @@ public final class RoleNormalizers {
             Optional<String> position = row.code("position");
             Optional<String> body = row.code("governing_body");
             if (position.isEmpty() && body.isEmpty()) {
-                return Outcome.<Role.Officer>dropped("officers.no_position");
+                row.flag("officers.no_position");
             }
             return switch (Parties.of(row)) {
                 case Parties.Holder.Invalid(String rule) -> Outcome.<Role.Officer>dropped("officers." + rule);
