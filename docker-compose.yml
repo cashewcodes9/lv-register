@@ -113,6 +113,8 @@ services:
       S3_BUCKET_LAKE: ${S3_BUCKET_LAKE:-lv-lake}
       DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # diff holds two full snapshots in memory; serial GC suits the 1 CPU VM.
+      JAVA_OPTS: ${CLI_JAVA_OPTS:--Xmx2g -XX:+UseSerialGC}
     depends_on:
       lake-init:
         condition: service_completed_successfully

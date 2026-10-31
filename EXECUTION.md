@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-10-31 · **Current milestone:** 4 (not started)
+**Last updated:** 2026-11-01 · **Current milestone:** 5 (not started); 4 has two open real-data items
 
 ## Status
 
@@ -14,7 +14,8 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 1. Source exploration | done, approved by owner 2026-10-31 |
 | 2. Project setup + domain | done 2026-10-31: `make build` green from a clean clone (3m 35s, cold cache) |
 | 3. Storage + ingest + lake + normalize | done 2026-10-31, merged into `dev` (PR #1, CI green) |
-| 4–10 | not started |
+| 4. Diff + events | code done 2026-11-01 (PR into `dev`); open: a capture a few days later, spot-check 5 events |
+| 5–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -98,23 +99,43 @@ to `main` and `dev` and on PRs into either. The `gh` token now has the `workflow
 - Real data in the compose lake: capture 2026-10-31 (raw 239 MB, lake 44 MB). Re-running
   `download` and `lake` for it changes nothing.
 
-## Milestone 4: next steps, in order
+## What exists (Milestone 4)
 
-0. `git switch dev && git pull && git switch -c milestone/4-diff-events`.
-1. Read PLAN.md sections 8 and 9 and docs/architecture.md "Event derivation". Check jqwik
-   (1.10.x) with JUnit 6 before using it; ask the owner if it does not work.
-2. A `normalize` entry point that builds a `Snapshot` for a capture from the lake (the steps in
-   `RealCaptureCheck`, moved into main code, with the counts kept for the quality step).
-3. `diff`: `diff(Snapshot, Snapshot)` for every event type, termination rule (only
-   `Terminated`, no role events), deterministic event ids
-   (`sha256(regNumber | type | snapshotDate | canonicalPayload)`), events as JSON Lines in
-   `s3://lv-lake/events/date=D/events.jsonl`, sorted by id, previous capture = latest earlier
-   capture in the lake.
-4. Property tests (section 9). Memory: two full snapshots need about 2 × 0.6 GB of heap; size
-   the CLI heap (`JAVA_OPTS`) and check on the VM.
-5. Collect a second real capture (a few days after 2026-10-31) and spot-check 5 events on
-   info.ur.gov.lv. Milestone 1 finding 4.4 (are role ids stable across captures?) is answered
-   then.
+- `lake/SnapshotLoader`: lake rows → normalizers → `Snapshot`, with counts per file
+  (`FileCounts`), orphan and duplicate roles. `RealCaptureCheck` uses it.
+- `diff`: `SnapshotDiff.diff(A, B)` (pure; terminated companies get only `Terminated`),
+  `EventJson` (canonical payloads and JSON Lines records), `EventIds` (sha256 id, sorted,
+  collision check), `StoredEvent`, `LakeCaptures` (capture dates from `register/date=*`),
+  `DiffStep` (previous capture = latest earlier one; baseline = empty file;
+  `events/date=D/events.jsonl` via `putAtomically`).
+- Tests: unit tests per event type and the termination rule, canonical JSON, ids; jqwik
+  properties (`diff(A, A)` empty, replay of `diff(A, B)` on A gives B for tracked fields, ids
+  stable and unique; checked by breaking the diff on purpose); `DiffStepTest` end to end
+  (synthetic CSVs → LakeWriter → loader → diff). 165 tests in `make build`.
+- CLI: `diff` wired; the `cli` service runs with `JAVA_OPTS=-Xmx2g -XX:+UseSerialGC`
+  (`CLI_JAVA_OPTS`). Real run 2026-10-31 → 2026-11-01: 4 events, peak 2.2 GB, 1 min 53 s.
+- Lake now holds captures 2026-10-31 and 2026-11-01 (raw, Parquet, events).
+
+## Milestone 4: still open (merged early, owner's choice 2026-11-01)
+
+1. Capture again a few days after 2026-11-01 (after 22:00 UTC, so the Riga date is right):
+   `docker compose --profile core run --rm cli download --date D`, then `lake` and `diff`.
+   A weekday export should give many more events.
+2. Pick 5 events of different types (company-level ones: name, address, status, registered,
+   terminated) and spot-check them on info.ur.gov.lv. The portal is a JavaScript app: the
+   owner checks in a browser, or Claude uses a browser tool. Tick the two PLAN.md boxes.
+3. Check finding 4.4 (role ids stable?) once a capture has added roles.
+
+## Milestone 5: next steps, in order
+
+0. `git switch dev && git pull && git switch -c milestone/5-quality-index`.
+1. Read PLAN.md section 11 and docs/architecture.md "Serving".
+2. `quality`: run record and quality report from `SnapshotLoader.Loaded` counts, the diff
+   result, the manifest and bucket sizes; `s3://lv-lake/reports/date=D/report.json`.
+   Avoid loading the snapshots twice (diff and quality in one run): decide with the owner
+   whether diff writes the normalize counts, or quality re-reads them.
+3. `serving` port + contract tests, `serving-postgres` with Flyway, indexer through the port.
+4. Test: no person data in CLI logs on a fixture run.
 
 Milestone 5 (serving), for later: the design is in docs/architecture.md "Serving". Write the
 contract suite in `serving` testFixtures first, then the Postgres adapter against it with a
@@ -192,3 +213,7 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-10-31 | Officers without position and governing body are kept and flagged (12,447 real rows, mostly IK representatives) |
 | 2026-10-31 | Person key = sha256(upper-case normalized name + masked code, else birth date); no qualifier, no key |
 | 2026-10-31 | Legal form families for the rare codes as in `LegalForms` (register S codes → ASSOCIATION; legacy enterprise codes → OTHER) |
+| 2026-11-01 | jqwik 1.10.2 works on JUnit 6 (checked with a spike) |
+| 2026-11-01 | Termination rule taken literally: a company that becomes closed gets only `Terminated` (no StatusChanged, no role events) |
+| 2026-11-01 | Capture dates follow Europe/Riga: capture after 22:00 UTC (winter) for the next date |
+| 2026-11-01 | Milestone 4 merged with the real-data items open (owner) |

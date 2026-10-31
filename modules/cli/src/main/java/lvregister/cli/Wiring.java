@@ -6,12 +6,15 @@ import java.time.Clock;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Optional;
+import lvregister.diff.DiffStep;
 import lvregister.ingest.CkanCatalog;
 import lvregister.ingest.Downloader;
 import lvregister.ingest.Http;
 import lvregister.lake.DuckDb;
 import lvregister.lake.DuckDbSettings;
+import lvregister.lake.LakeReader;
 import lvregister.lake.LakeWriter;
+import lvregister.lake.SnapshotLoader;
 import lvregister.storage.ObjectStore;
 import lvregister.storage.S3ObjectStore;
 import lvregister.storage.S3Settings;
@@ -48,6 +51,16 @@ final class Wiring {
                 LOG.info("lake: {} files written, {} unchanged",
                         results.stream().filter(LakeWriter.FileResult::written).count(),
                         results.stream().filter(r -> !r.written()).count());
+            }
+        });
+        steps.put(StepName.DIFF, date -> {
+            S3Settings settings = S3Settings.fromEnvironment(env);
+            try (S3Client s3 = S3ObjectStore.client(settings);
+                    DuckDb db = DuckDb.open(DuckDbSettings.fromEnvironment(env), Optional.of(settings))) {
+                ObjectStore lake = lake(env, s3);
+                DiffStep.Result result = new DiffStep(lake, new SnapshotLoader(new LakeReader(db, lake))).run(date);
+                LOG.info("diff: {} events against {}", result.total(),
+                        result.previous().map(Object::toString).orElse("nothing (baseline)"));
             }
         });
         return new Steps(steps);

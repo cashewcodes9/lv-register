@@ -81,8 +81,14 @@ Each step reads objects and writes objects for one capture, so it can run alone.
      `Other` and are counted, never dropped silently
    - drop rows that break a rule, counted per rule; drop duplicate registration numbers,
      counted
-4. **diff** (`diff`): compare the previous capture A with this capture B (rules below). Writes the
-   capture's events.
+4. **diff** (`diff`): load the snapshot of this capture B and of the latest earlier capture A
+   in the lake (`SnapshotLoader`: lake rows → normalizers → `Snapshot`), compare them (rules
+   below) and write the events as JSON Lines, sorted by id. The first capture is the baseline
+   and gets an empty events file. One line per event, keys sorted:
+   `{"current":"2026-11-09","id":"<sha256>","payload":{…},"previous":"2026-11-02","regNumber":"…","type":"NAME_CHANGED"}`.
+   Payloads are canonical (sorted keys, sets sorted by their JSON, plain decimals, absent values
+   left out), so the same change always gives the same bytes and id. The step holds two
+   snapshots in memory: the cli JVM runs with `-Xmx2g`.
 5. **quality** (`quality`): run record and quality report (PLAN.md section 11).
 6. **index** (`index`): upsert companies, events, the run report, and the stats and feature
    marts into the serving store through `ServingWriter`.
@@ -100,7 +106,7 @@ dbt runs between `quality` and `index` (see Orchestration).
 | officer set differs | `ManagementChanged(added, removed)` |
 | member, stockholder or beneficial owner set differs | `OwnershipChanged(added, removed)` |
 | status differs | `StatusChanged(old, new)` |
-| termination date appears | `Terminated(date)` |
+| becomes closed: termination date appears, or status becomes TERMINATED / REORGANIZED | `Terminated(date)`, and no other event for that company in this capture (its roles vanish with it) |
 | in A, not in B | `MissingFromSnapshot` (flagged for review) |
 
 - Comparison runs on normalized values, so formatting noise does not create events.
@@ -145,9 +151,9 @@ ingest  lake  normalize  diff  quality  index  pipes  serving-postgres   api (Sp
 | `domain` | records, sealed types, invariants in compact constructors; no I/O | nothing |
 | `storage` | `ObjectStore` interface; S3 and local-directory implementations | `domain` |
 | `ingest` | CKAN lookup, downloader, sha256 manifest | `domain`, `storage` |
-| `lake` | DuckDB JDBC session (httpfs), CSV → Parquet writer, row reader | `domain`, `storage`, `ingest` (manifest, file list) |
+| `lake` | DuckDB JDBC session (httpfs), CSV → Parquet writer, row reader, `SnapshotLoader` | `domain`, `storage`, `ingest` (manifest, file list), `normalize` |
 | `normalize` | row → record functions, legal form and status mapping, person keys, snapshot assembly | `domain` |
-| `diff` | `diff(Snapshot, Snapshot)`, event ids | `domain` |
+| `diff` | `SnapshotDiff` (pure), canonical event JSON, event ids, the diff step (I/O) | `domain`, `lake` (snapshot loading), `storage` |
 | `quality` | run record, report | `domain` |
 | `index` | indexing step: reads events, reports and marts, writes through `ServingWriter` | `domain`, `storage`, `serving` |
 | `serving` | port: `ServingWriter`, `ServingQueries`, read records; abstract contract test suite (test fixtures) | `domain` |
