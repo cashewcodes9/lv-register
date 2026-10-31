@@ -61,14 +61,20 @@ Nothing under `data/` or in the buckets is committed: it contains personal data.
 Each step reads objects and writes objects for one capture, so it can run alone. The CLI is
 `lv-register <step> --date YYYY-MM-DD`. Dagster runs the same commands in the `cli` image.
 
-1. **download** (`ingest`): fetch each UR file with `java.net.http.HttpClient`, computing
-   sha256 while streaming, write to a temporary key, then copy into place. A file whose
-   sha256 is already in the manifest is not stored again.
-2. **lake** (`lake`): DuckDB JDBC converts each CSV to Parquet (`COPY ... TO 's3://...'`),
-   with source sha256 and size in the key-value metadata. If the day's Parquet already
-   carries the same sha256, the step does nothing.
+1. **download** (`ingest`): look up the 11 MVP files by name in the CKAN catalog of
+   data.gov.lv (`package_search` for organisation `ur`; a missing or duplicated file fails the
+   step), fetch each with `java.net.http.HttpClient` (5xx and I/O errors retried, 4xx fails at
+   once), compute sha256 while streaming, write to a temporary key, then copy into place. The
+   manifest `date=D/manifest.json` records file, URL, sha256, size, fetch time and the CKAN
+   `last_modified`. A file already in the capture's manifest is not downloaded again: a
+   capture is fixed once written.
+2. **lake** (`lake`): DuckDB JDBC reads each raw CSV through `httpfs` (`read_csv`, `;`, all
+   columns VARCHAR, no Hive columns) and writes Parquet (ZSTD) with source file, sha256, size
+   and capture date in the key-value metadata. DuckDB writes to a local work file, which is
+   uploaded through a temporary key. If the day's Parquet already carries the manifest's
+   sha256, the step does nothing.
 3. **normalize** (`normalize`): pure functions turn lake rows into domain records. Each
-   returns `Cleaned<T>(rows, droppedByRule)`:
+   returns `Cleaned<T>(rows, droppedByRule, flaggedByRule)`:
    - trim, Unicode NFC, collapse whitespace
    - validate the registration number format
    - map Latvian legal forms and statuses to North-Data-style families; unknown values become
@@ -111,7 +117,7 @@ Re-running any step for a capture leaves every output unchanged.
 
 | Layer | Mechanism |
 |---|---|
-| Raw | skip a file whose sha256 is in the manifest; write via temp key + copy |
+| Raw | skip a file already in the capture's manifest; write via temp key + copy |
 | Lake | skip a capture whose Parquet metadata has the same source sha256 |
 | Events | event id = `sha256(regNumber \| eventType \| snapshotDate \| canonicalPayload)`; objects sorted by id; temp key + copy |
 | Marts | dbt full rebuild from lake and events |
@@ -138,9 +144,9 @@ ingest  lake  normalize  diff  quality  index  pipes  serving-postgres   api (Sp
 |---|---|---|
 | `domain` | records, sealed types, invariants in compact constructors; no I/O | nothing |
 | `storage` | `ObjectStore` interface; S3 and local-directory implementations | `domain` |
-| `ingest` | downloader, sha256 manifest | `domain`, `storage` |
-| `lake` | DuckDB JDBC reader and writer | `domain`, `storage` |
-| `normalize` | row → record functions, legal form and status mapping | `domain` |
+| `ingest` | CKAN lookup, downloader, sha256 manifest | `domain`, `storage` |
+| `lake` | DuckDB JDBC session (httpfs), CSV → Parquet writer, row reader | `domain`, `storage`, `ingest` (manifest, file list) |
+| `normalize` | row → record functions, legal form and status mapping, person keys, snapshot assembly | `domain` |
 | `diff` | `diff(Snapshot, Snapshot)`, event ids | `domain` |
 | `quality` | run record, report | `domain` |
 | `index` | indexing step: reads events, reports and marts, writes through `ServingWriter` | `domain`, `storage`, `serving` |
