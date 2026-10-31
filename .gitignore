@@ -1,0 +1,22 @@
+# Pipeline data: contains personal data, never commit
+/data/
+
+# Gradle / Java
+.gradle/
+build/
+*.class
+/.kotlin/
+
+# Frontend
+node_modules/
+/web/dist/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Local config
+.env
+*.local
