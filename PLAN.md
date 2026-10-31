@@ -535,12 +535,12 @@ Rules:
       needs a browser)
 
 ### Milestone 5: Quality + index
-- [ ] Run record and quality report (section 11)
-- [ ] `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite;
+- [x] Run record and quality report (section 11)
+- [x] `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite;
       `serving-postgres`: Flyway schema for companies, events and runs (`pg_trgm`, `unaccent`)
-- [ ] Indexer with upserts through the port; Postgres adapter passes the contract tests (Testcontainers)
+- [x] Indexer with upserts through the port; Postgres adapter passes the contract tests (Testcontainers)
 - [x] Testcontainers working from the `build` container (done in Milestone 3)
-- [ ] Test: no person data in CLI logs on a fixture run
+- [x] Test: no person data in CLI logs on a fixture run
 
 ### Milestone 6: dbt
 - [ ] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
