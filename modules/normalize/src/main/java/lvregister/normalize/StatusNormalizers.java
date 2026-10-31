@@ -80,12 +80,17 @@ public final class StatusNormalizers {
         }));
     }
 
+    /** 10-digit codes starting with 1: a legacy numbering that is not in the register (source assessment 9). */
+    public static final String LEGACY_REGCODE = "reorganizations.legacy_regcode";
+
     public static Cleaned<Reorganization> reorganizations(Stream<Row> rows) {
         return Cleaning.collect(rows.map(row -> {
             Optional<RegNumber> source = row.regNumber("source_entity_regcode");
             Optional<RegNumber> target = row.regNumber("final_entity_regcode");
             if (source.isEmpty() || target.isEmpty()) {
-                return Outcome.<Reorganization>dropped("reorganizations.invalid_regcode");
+                boolean legacy = Stream.of("source_entity_regcode", "final_entity_regcode")
+                        .map(row::text).flatMap(Optional::stream).anyMatch(code -> code.matches("1\\d{9}"));
+                return Outcome.<Reorganization>dropped(legacy ? LEGACY_REGCODE : "reorganizations.invalid_regcode");
             }
             return Outcome.kept(new Reorganization(row.code("reorganization_type").orElse("UNKNOWN"), source.get(), target.get(),
                     row.date("registered", "reorganizations.invalid_date")), row);
