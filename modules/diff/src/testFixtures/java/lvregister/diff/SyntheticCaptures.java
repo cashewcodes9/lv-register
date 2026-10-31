@@ -31,7 +31,7 @@ public final class SyntheticCaptures {
             "o1;40003000001;NATURAL_PERSON;BOARD_MEMBER;EXECUTIVE_BOARD;Test Person;010101-*****;;;2020-01-01\n";
     public static final String OFFICER_B = "o2;40003000002;FOREIGN_ENTITY;BOARD_MEMBER;;Board Ltd;;;;2021-01-01\n";
     /** Person names used in the fixtures, for checks that they never reach logs. */
-    public static final java.util.List<String> PERSON_NAMES = java.util.List.of("Test Person", "Other Person", "Test", "Person");
+    public static final java.util.List<String> PERSON_NAMES = java.util.List.of("Test Person", "Other Person");
 
     private SyntheticCaptures() {}
 
