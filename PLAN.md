@@ -411,7 +411,7 @@ The same figures go to two places:
 ### 11.1 Monitoring in the MVP
 
 Full observability is on the roadmap (ROADMAP.md). The MVP keeps what is needed to notice a
-missed or broken day:
+missed or broken capture:
 - JSON logs to stdout with `run_id`, `dagster_run_id`, `step` and `partition_date` in every
   line, readable with `docker compose logs` and in the Dagster run view.
 - Dagster asset checks (warn or block), freshness checks on the weekly assets, a run failure
