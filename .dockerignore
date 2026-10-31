@@ -1,0 +1,9 @@
+# Keep the build context small and free of data (person data must never enter an image).
+data/
+.git/
+.gradle/
+**/build/
+**/.gradle/
+.env
+*.duckdb
+node_modules/
