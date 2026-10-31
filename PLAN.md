@@ -86,7 +86,7 @@ logic lives in Java.
 | CSV | FastCSV or Apache Commons CSV |
 | HTTP client | java.net.http.HttpClient |
 | Object storage | SeaweedFS (S3 API) locally, AWS S3 compatible. Java uses AWS SDK v2 `S3Client` with endpoint override and path-style access |
-| Lake | Parquet files written and queried with DuckDB (JDBC, `httpfs` extension) |
+| Lake | Parquet files written and queried with DuckDB 1.4.x LTS (JDBC, `httpfs` extension). Pinned to 1.4: DuckDB 2.0 binaries need AVX, which the dev VM lacks (source assessment 4.9) |
 | Events | JSON Lines per capture in S3 |
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
 | Orchestration | Dagster (webserver, daemon, Postgres run storage) with dagster-dbt and dagster-docker. Java steps run in the `cli` image through Dagster Pipes |
@@ -124,7 +124,8 @@ these choices in ADRs.
 12. Retention, so storage stays bounded on an always-on machine (section 6.2).
 
 ### Out of scope
-- Financial statements (filed with the State Revenue Service, VID). On the roadmap.
+- Financial statements. UR publishes annual-report data itself (`gada-parskatu-finansu-dati`,
+  ~500 MB per capture; source assessment section 1). On the roadmap.
 - Authentication, user accounts, production deployment.
 - Publishing personal data (section 12).
 - High availability: every service is a single container.
@@ -296,6 +297,16 @@ image and the files it writes.
 
 ## 7. Domain model (sketch, finalize after Milestone 1)
 
+MVP files (decided after Milestone 1, see `docs/source-assessment.md`): `register`,
+`officers`, `members`, `members_joint_owners`, `stockholders`, `stockholders_joint_owners`,
+`beneficial_owners`, `equity_capitals`, `liquidations`, `insolvency_legal_person_proceeding`,
+`reorganizations`. Status combines `register.closed`, open liquidations and open insolvency
+proceedings:
+
+```java
+enum CompanyStatus { ACTIVE, IN_LIQUIDATION, INSOLVENT, LEGAL_PROTECTION, TERMINATED, REORGANIZED }
+```
+
 ```java
 record RegNumber(String value) {}          // validate format in compact constructor
 
@@ -343,7 +354,9 @@ Compare the previous capture (A) with the current one (B), keyed by registration
 | Officer set differs | ManagementChanged(added, removed) |
 | Members / stockholders / BO set differs | OwnershipChanged(added, removed) |
 | Status differs (e.g. to liquidation) | StatusChanged(old, new) |
-| Termination date appears | Terminated(date) |
+| Termination date appears | Terminated(date). Role files list active entities only, so the
+  roles of a terminated company vanish in the same capture: no ManagementChanged or
+  OwnershipChanged is emitted for it (source assessment 4.2) |
 | In A, not in B | MissingFromSnapshot (flag for review, removal is unusual) |
 
 - Normalize before comparing (trim, Unicode NFC, collapse whitespace, consistent case for
@@ -485,8 +498,8 @@ Rules:
 - [x] Measure file sizes as CSV and as Parquet (sets the retention defaults)
 - [x] Map each field to a North Data feature (base data, history, representatives,
       shareholders, person networks, segment codes)
-- [ ] Decide which files are in MVP
-- [ ] STOP and show me the assessment before continuing
+- [x] Decide which files are in MVP
+- [x] STOP and show me the assessment before continuing
 
 ### Milestone 2: Project setup + domain
 - [ ] Gradle multi-module, Java 25 toolchain

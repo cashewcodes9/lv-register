@@ -195,7 +195,7 @@ insolvency or legal protection). Proposed `CompanyStatus`: `ACTIVE`, `IN_LIQUIDA
 `INSOLVENT`, `LEGAL_PROTECTION`, `TERMINATED` (`L`), `REORGANIZED` (`R`, with the successor
 from `reorganizations.csv` when known).
 
-### 4.2 Roles vanish on termination
+### 4.2 Roles vanish on termination (decided: emit only `Terminated`)
 Because role files cover active entities only, a terminated company loses all officers,
 members and BOs in the same capture. The diff must not report this as
 `ManagementChanged`/`OwnershipChanged` with everyone removed. Proposal: when an entity
@@ -288,13 +288,14 @@ With the planned retention (raw: latest 2, lake: latest 12) the MVP needs about
 | Segment codes | none (4.6) | – |
 | Financials | `gada-parskatu-finansu-dati` | roadmap |
 
-## 7. Proposed MVP files
+## 7. MVP files (decided 2026-10-31)
 
 `register`, `officers`, `members`, `members_joint_owners`, `stockholders`,
 `stockholders_joint_owners`, `beneficial_owners`, `equity_capitals`, `liquidations`,
 `insolvency_legal_person_proceeding`, `reorganizations`.
 
-Not in the MVP: `area_of_activity` (free text), `register_name_history` (stale), financial
+Decided with the owner after this assessment, together with the termination rule in 4.2
+(emit only `Terminated`). Not in the MVP: `area_of_activity` (free text), `register_name_history` (stale), financial
 statements (roadmap), the niche registers.
 
 ## 8. Personal data
