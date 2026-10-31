@@ -5,8 +5,9 @@ application (Hamburg). Follow this plan milestone by milestone. Ask me before ch
 
 Goal: show that I can take a country North Data does not cover yet, understand its sources on
 my own, and turn them into clean, tested, event-based company data, with a React frontend to
-explore and check it. The pipeline is orchestrated, observable and monitored like a
-production data platform.
+explore and check it. The pipeline is scheduled and checked by an orchestrator, like a
+production data platform. Full observability (metrics, traces, dashboards, alerts) comes after
+the MVP; see [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -57,7 +58,8 @@ Differences from Oversee:
 | Warehouse | PostgreSQL + dbt-postgres | DuckDB + dbt-duckdb over the Parquet lake; marts written back to S3 as Parquet. No Postgres for data |
 | Serving | PostgreSQL | Elasticsearch |
 | Dagster | `dagster dev`, schedule stopped | always-on webserver and daemon in Docker, daily schedule on, Postgres for Dagster's own run storage |
-| Observability | JSON logs with run id | logs, metrics and traces in Grafana, dashboards and alerts as code (section 11.1) |
+| Monitoring | JSON logs with run id | JSON logs with run id, Dagster asset checks, freshness checks and failure sensor. Metrics, traces, dashboards and alerts on the roadmap |
+| Spring | none (FastAPI) | Spring Boot 4 for the API only |
 
 ## 3. Language and style
 
@@ -77,10 +79,10 @@ logic lives in Java.
 |---|---|
 | Language | Java 25 for pipeline and API; Python 3.12 for Dagster; SQL for dbt |
 | Build | Gradle (Kotlin DSL), toolchain set to 25; `uv` for the Python project |
-| Frameworks | Spring Boot in the `api` module only (version decided in Milestone 2). All pipeline modules are plain Java with no Spring imports. Manual wiring in the CLI `Main` |
+| Frameworks | Spring Boot 4 (Spring Framework 7) in the `api` module only. Spring Boot 3.x is out of open-source support. All pipeline modules are plain Java with no Spring imports. Manual wiring in the CLI `Main` |
 | CLI | Picocli (one subcommand per pipeline step, `--date` option) |
-| HTTP API | Spring Boot web, Bucket4j rate limiting, Actuator, springdoc-openapi, Caffeine cache, ProblemDetail errors |
-| JSON | Jackson (with records support) |
+| HTTP API | Spring Boot 4 web, Bucket4j rate limiting, Actuator, springdoc-openapi (the release line for Spring Boot 4), Caffeine cache, ProblemDetail errors |
+| JSON | Jackson 3 (`tools.jackson`, the Spring Boot 4 default), records support; the same version in pipeline modules |
 | CSV | FastCSV or Apache Commons CSV |
 | HTTP client | java.net.http.HttpClient |
 | Object storage | SeaweedFS (S3 API) locally, AWS S3 compatible. Java uses AWS SDK v2 `S3Client` with endpoint override and path-style access |
@@ -89,9 +91,9 @@ logic lives in Java.
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
 | Orchestration | Dagster (webserver, daemon, Postgres run storage) with dagster-dbt and dagster-docker. Java steps run in the `cli` image through Dagster Pipes |
 | Search | Elasticsearch 8 |
-| Observability | OpenTelemetry (Java agent for the API, OTel SDK in the CLI), Micrometer, Grafana Alloy (collector), Prometheus, Loki, Tempo, Grafana; exporters for Elasticsearch and Postgres; SeaweedFS metrics |
 | Tests | JUnit 5, AssertJ, jqwik (property tests), Testcontainers (Elasticsearch, SeaweedFS), ArchUnit; pytest for Dagster definitions; dbt data tests |
-| Logging | SLF4J + Logback, JSON to stdout, run id in MDC |
+| Logging | SLF4J + Logback, JSON to stdout, run id, Dagster run id, step and partition date in MDC |
+| Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
 | Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker and git |
 | CI | GitHub Actions: backend build + test, dbt parse + build on fixtures, Dagster definitions load, frontend lint + build, Docker image builds |
 | Frontend | React + TypeScript (Vite), TanStack Query for data fetching, Recharts for charts, react-force-graph or d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
@@ -118,14 +120,14 @@ these choices in ADRs.
    from the lake.
 9. Index companies, events and run reports into Elasticsearch.
 10. One value feature (section 10).
-11. Observability: logs, metrics and traces in Grafana, dashboards and alerts (section 11.1).
-12. Spring Boot read API and React frontend to explore the data and check pipeline health.
+11. Spring Boot read API and React frontend to explore the data and check pipeline health.
 
 ### Out of scope
-- Financial statements (filed with the State Revenue Service, VID). Stretch goal only.
+- Financial statements (filed with the State Revenue Service, VID). On the roadmap.
 - Authentication, user accounts, production deployment.
 - Publishing personal data (section 12).
 - High availability: every service is a single container.
+- Metrics, traces, Grafana dashboards and alerting (ROADMAP.md).
 
 ## 6. Architecture
 
@@ -142,8 +144,6 @@ data.gov.lv  (cache, sha256 manifest)   (DuckDB, unfiltered, source sha)     (Ja
                          quality ─► s3://lv-lake/reports/date=…  ─────────────┤
                                                                               ▼
                               Elasticsearch (companies, events, runs, stats, features) ─► Spring Boot API ─► React
-
-      every service ─► logs, metrics, traces ─► Grafana Alloy ─► Loki / Prometheus / Tempo ─► Grafana (dashboards, alerts)
 ```
 
 Every pipeline step is a function from input objects to output objects, so each step can be
@@ -172,24 +172,18 @@ project builds the same on any machine and in CI.
 | `lake` | `chrislusf/seaweedfs` (pinned) | S3 API (:8333) and file browser (:8888); buckets `lv-raw`, `lv-lake`, `lv-marts` |
 | `elasticsearch` | `elasticsearch:8.x`, single node, security off locally | serving store, data volume |
 | `build` | `eclipse-temurin:25-jdk` | runs the Gradle wrapper: `./gradlew build`, tests. Gradle cache in a named volume |
-| `cli` | `Dockerfile` target `cli` (JRE 25 + CLI jar + OTel SDK) | runs pipeline steps; launched by Dagster or `docker compose run` |
-| `api` | `Dockerfile` target `api` (JRE 25 + Spring Boot jar with `web/dist` + OTel Java agent) | API and frontend on one port |
+| `cli` | `Dockerfile` target `cli` (JRE 25 + CLI jar) | runs pipeline steps; launched by Dagster or `docker compose run` |
+| `api` | `Dockerfile` target `api` (JRE 25 + Spring Boot jar with `web/dist`) | API and frontend on one port |
 | `web-dev` | `node:22` (LTS) | Vite dev server with hot reload; `npm` commands; `node_modules` in a named volume |
 | `dagster-postgres` | `postgres:16` | Dagster run, event log and schedule storage only |
 | `dagster-code` | `orchestration/Dockerfile` (Python, Dagster, dbt-duckdb, dbt project) | Dagster code location (gRPC); launches `cli` containers through the Docker socket |
 | `dagster-webserver` | same image | Dagster UI (:3000): asset graph, runs, backfills, checks |
 | `dagster-daemon` | same image | schedules, sensors, run queue, retries |
-| `alloy` | `grafana/alloy` | collects container logs (Docker discovery), receives OTLP, scrapes metrics |
-| `prometheus` | `prom/prometheus` | metrics store, alert rule evaluation |
-| `loki` | `grafana/loki` | log store |
-| `tempo` | `grafana/tempo` | trace store |
-| `grafana` | `grafana/grafana` | dashboards and alerts, provisioned from `docker/grafana/` |
-| `es-exporter`, `pg-exporter` | Prometheus community exporters | Elasticsearch and Dagster Postgres metrics |
 | `duckdb` | small image with the DuckDB CLI | ad-hoc SQL over the lake (Milestone 1 and debugging) |
 
 - Compose profiles keep the default stack small: `core` (lake, elasticsearch, api),
-  `orchestration` (Dagster services), `observability` (Alloy, Prometheus, Loki, Tempo,
-  Grafana, exporters), `dev` (build, web-dev, duckdb). `make up` starts all of them.
+  `orchestration` (Dagster services), `dev` (build, web-dev, duckdb). `make up` starts all
+  of them.
 - One multi-stage `Dockerfile` for Java: stage `web` builds the React app with Node, stage
   `jdk` builds the jars with the Gradle wrapper, final stages `cli` and `api` copy the jars
   onto `eclipse-temurin:25-jre`. Production image = target `api`.
@@ -199,11 +193,11 @@ project builds the same on any machine and in CI.
   `condition: service_healthy`.
 - Testcontainers inside the `build` container: mount `/var/run/docker.sock` and set
   `TESTCONTAINERS_HOST_OVERRIDE` so tests reach the containers they start.
-- Development credentials (SeaweedFS keys, Postgres password, Grafana admin) come from
+- Development credentials (SeaweedFS keys, Postgres password) come from
   `.env` (copied from `.env.example`) and are for local use only.
 - A `Makefile` wraps the common commands (`make up`, `make down`, `make build`, `make test`,
-  `make run DATE=...`, `make dbt-build`, `make dbt-docs`, `make dagster`, `make grafana`,
-  `make web-dev`, `make duckdb`), as in Oversee.
+  `make run DATE=...`, `make dbt-build`, `make dbt-docs`, `make dagster`, `make web-dev`,
+  `make duckdb`), as in Oversee.
 - CI uses the same images, so a green CI means a green local build.
 
 ### Module layout
@@ -225,7 +219,6 @@ lv-register/
     diff/         snapshot comparison -> events, deterministic event ids
     quality/      run record, quality report
     index/        Elasticsearch writer (upserts) and read queries
-    telemetry/    OTel SDK setup for the CLI, metric names, MDC helpers; no Spring
     pipes/        Dagster Pipes messages from the CLI (materializations, checks, logs)
     cli/          Picocli commands, Main with manual wiring
     api/          Spring Boot read API under /api: controllers, DTO records, Bucket4j rate limit,
@@ -237,14 +230,9 @@ lv-register/
   docker/
     seaweedfs/    s3.json identities
     dagster/      dagster.yaml, workspace.yaml
-    alloy/        config.alloy
-    prometheus/   prometheus.yml, alert rules
-    loki/ tempo/  configs
-    grafana/      provisioning: data sources, dashboards (JSON), alert rules, contact points
   docs/
     source-assessment.md
     architecture.md
-    runbook.md    what each alert means and what to do
     adr/
   .github/workflows/ci.yml
 ```
@@ -362,53 +350,22 @@ Per run, write `s3://lv-lake/reports/date=YYYY-MM-DD/report.json` with:
 - events per type, with a warning when a type spikes beyond a threshold (a spike usually
   means a parsing problem, not real change)
 
-The same figures go to three places:
+The same figures go to two places:
 - Dagster: materialization metadata and asset checks (via Pipes), so a bad day is visible in
   the asset graph and can block downstream assets.
-- Metrics (section 11.1), for dashboards and alerts over time.
 - Elasticsearch (`runs` index), so the API and frontend show pipeline health.
 
-### 11.1 Observability and monitoring
+### 11.1 Monitoring in the MVP
 
-**Signals:**
-
-| Signal | Source | Path | Store |
-|---|---|---|---|
-| Logs | all containers, JSON to stdout (Logback JSON encoder, Dagster JSON logs) | Alloy Docker discovery | Loki |
-| Metrics, API | Micrometer via Actuator | OTLP to Alloy | Prometheus |
-| Metrics, pipeline | OTel SDK in the CLI, flushed before exit (batch jobs cannot be scraped) | OTLP to Alloy | Prometheus |
-| Metrics, infrastructure | Elasticsearch and Postgres exporters, SeaweedFS metrics endpoint, Alloy container metrics | Prometheus scrape | Prometheus |
-| Traces | OTel Java agent in the API (HTTP, Elasticsearch client); spans per step in the CLI | OTLP to Alloy | Tempo |
-
-- Correlation: every log line, metric and span of a pipeline run carries `run_id`,
-  `dagster_run_id`, `step` and `partition_date`. API logs carry the trace id. Grafana links
-  logs to traces and Dagster runs.
-- Pipeline metrics (names finalized in Milestone 8): rows read, kept and dropped per file and
-  rule; events per type; step duration; bytes downloaded; last successful partition date per
-  step; Elasticsearch documents indexed.
-
-**Dashboards** (JSON in `docker/grafana/dashboards/`, provisioned):
-1. Pipeline health: last successful day per step, run durations, failures, freshness.
-2. Data quality: rows kept vs dropped per rule, orphans, unmapped values, events per type
-   over time with spike thresholds.
-3. API: request rate, error rate, p50/p95/p99 latency, rate-limit rejections, cache hit rate.
-4. Infrastructure: Elasticsearch cluster health, heap and disk; SeaweedFS storage; JVM; Dagster
-   Postgres; container CPU and memory.
-
-**Alerts** (Grafana alert rules as code, each with a runbook entry in `docs/runbook.md`):
-- No successful `download` for today by the deadline (the day's data would be lost).
-- Any pipeline step failed after its retries.
-- Cleaning dropped more than 1% of rows of a file.
-- Event count of a type above its spike threshold.
-- Orphans or unmapped legal forms increased day over day.
-- API 5xx rate above 1% or p95 latency above 500 ms for 10 minutes.
-- Elasticsearch cluster not green; disk above 80% on any volume.
-
-Thresholds are starting values, tuned once real data exists. Contact point locally: Grafana's
-own notification list, plus an optional webhook (for example a Slack or Discord URL in `.env`).
-
-Dagster adds its own layer: asset checks (warn or block), freshness checks on the daily
-assets, a run failure sensor, and retry policies with backoff on network steps.
+Full observability is on the roadmap (ROADMAP.md). The MVP keeps what is needed to notice a
+missed or broken day:
+- JSON logs to stdout with `run_id`, `dagster_run_id`, `step` and `partition_date` in every
+  line, readable with `docker compose logs` and in the Dagster run view.
+- Dagster asset checks (warn or block), freshness checks on the daily assets, a run failure
+  sensor (logs, plus an optional webhook URL in `.env`), and retry policies with backoff on
+  network steps.
+- Actuator health for the API, with an Elasticsearch indicator; healthchecks on every service.
+- The frontend Pipeline page for run history and quality reports.
 
 ## 12. Personal data
 
@@ -417,9 +374,9 @@ Officers and beneficial owners are personal data.
 - The API returns persons only in the context of one company (its officers and owners, and
   its network graph). No endpoint lists or exports persons in bulk.
 - Raw data, the lake and the marts are never committed. Tests use small, anonymized fixtures.
-- Logs, metrics, traces and Dagster metadata never contain person names or person keys. They
-  carry registration numbers and counts only. A test checks the CLI log output on a fixture.
-- Grafana, Dagster, SeaweedFS and Elasticsearch are bound to localhost and not exposed.
+- Logs and Dagster metadata never contain person names or person keys. They carry
+  registration numbers and counts only. A test checks the CLI log output on a fixture.
+- Dagster, SeaweedFS and Elasticsearch are bound to localhost and not exposed.
 - Note in the README and the source assessment that EU rules on public BO access may narrow
   Latvia's currently open model.
 
@@ -441,8 +398,7 @@ Officers and beneficial owners are personal data.
 - Errors as RFC 7807 ProblemDetail via `@RestControllerAdvice`.
 - Bucket4j rate limit per IP, simple configurable default.
 - CORS allowed for the Vite dev server only.
-- Actuator health (with Elasticsearch indicator), metrics exported over OTLP,
-  springdoc-openapi (Swagger UI). Generate TypeScript types for the frontend from the OpenAPI
+- Actuator health (with Elasticsearch indicator), springdoc-openapi (Swagger UI). Generate TypeScript types for the frontend from the OpenAPI
   spec.
 - Caffeine cache for stats and search.
 
@@ -455,7 +411,7 @@ Pages:
 4. **Network:** company-person graph around one company.
 5. **Changes:** events per day, filter by type.
 6. **Pipeline:** runs and quality reports (rows read/kept, dropped per rule, event spikes),
-   with links to the Dagster run and the Grafana dashboard for that run.
+   with a link to the Dagster run.
    This is the "check what we have" view.
 7. **Insights:** value feature results, e.g. mass-registration addresses.
 
@@ -508,6 +464,7 @@ Rules:
 - [ ] Elasticsearch mappings for companies, events and runs
 - [ ] Indexer with upserts, tested with Testcontainers
 - [ ] Testcontainers working from the `build` container
+- [ ] Test: no person data in CLI logs on a fixture run
 
 ### Milestone 6: dbt
 - [ ] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
@@ -534,25 +491,16 @@ Rules:
 - [ ] Backfill of past partitions from the lake (not from UR) works from the UI
 - [ ] pytest: definitions load, asset graph and partition mapping are as expected
 
-### Milestone 8: Observability and monitoring
-- [ ] Compose profile `observability`: Alloy, Prometheus, Loki, Tempo, Grafana, exporters
-- [ ] `telemetry` module: OTel SDK in the CLI, pipeline metrics, spans per step, flush on exit
-- [ ] Correlated `run_id`, `dagster_run_id`, `step`, `partition_date` across logs, metrics, spans
-- [ ] Four provisioned dashboards (section 11.1)
-- [ ] Alert rules and contact point as code; `docs/runbook.md` entry per alert
-- [ ] Test: no person data in logs on a fixture run
-- [ ] Trigger each alert once on purpose and record that it fired
-
-### Milestone 9: Spring Boot API
-- [ ] Spring Boot app in `api/`, depending on the pipeline modules
+### Milestone 8: Spring Boot API
+- [ ] Spring Boot 4 app in `api/`, depending on the pipeline modules
 - [ ] All endpoints from section 13
 - [ ] DTO records, validation, paging, ProblemDetail errors
 - [ ] Bucket4j rate limit, CORS for Vite dev server
-- [ ] Actuator health, OTLP metrics, OTel Java agent traces, springdoc-openapi, Caffeine cache
+- [ ] Actuator health, springdoc-openapi, Caffeine cache
 - [ ] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against an Elasticsearch
       Testcontainer
 
-### Milestone 10: React frontend
+### Milestone 9: React frontend
 - [ ] Vite + React + TypeScript app in `web/`
 - [ ] TypeScript types generated from the OpenAPI spec
 - [ ] All pages from section 14
@@ -561,42 +509,33 @@ Rules:
 - [ ] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
       command
 
-### Milestone 11: Polish
-- [ ] README: problem, architecture diagram, screenshots (frontend, Dagster asset graph,
-      Grafana dashboards), how to run in under 5 commands, design decisions, link to Oversee
-      as the reference design
+### Milestone 10: Polish
+- [ ] README: problem, architecture diagram, screenshots (frontend, Dagster asset graph), how
+      to run in under 5 commands, design decisions, link to Oversee as the reference design
 - [ ] ADRs in docs/adr:
       1. Deriving events from snapshot diffs
       2. Deterministic event ids and idempotency
       3. Person matching strategy
-      4. Spring Boot only at the API edge, plain Java pipeline
+      4. Spring Boot 4 only at the API edge, plain Java pipeline
       5. Dagster orchestrating Java steps through Pipes
       6. dbt-duckdb over the lake instead of a warehouse database
-      7. Observability stack: OpenTelemetry, Grafana, Prometheus, Loki, Tempo
-- [ ] Finish `docs/source-assessment.md` and `docs/runbook.md`
+- [ ] Finish `docs/source-assessment.md`
 - [ ] Short demo GIF of the frontend
 
-### Stretch
-- [ ] Financial statements from VID
-- [ ] Deepen Lithuania coverage the same way
-- [ ] Cloud deployment: AWS S3 instead of SeaweedFS, managed Elasticsearch, Dagster on a VM or
-      Kubernetes, Grafana Cloud
-- [ ] Data contracts: schema checks on the UR files that fail `download` when columns change
+After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch items there).
 
 ## 16. Definition of done
 
 - `make build` (Gradle in the `build` container) passes from a clean clone, including the
   ArchUnit boundary test. The host needs only Docker and git.
-- `make up` starts the whole stack: lake, Elasticsearch, Dagster, observability, API and
-  frontend.
+- `make up` starts the whole stack: lake, Elasticsearch, Dagster, API and frontend.
 - The Dagster daily schedule runs the full pipeline for a day without manual steps, and the
   asset graph shows every asset and check green.
 - `make run DATE=<d>` (`lv-register run --date <d>` in the `cli` container) runs the Java
   steps for a day without Dagster.
 - Re-running any day produces no new events (tested).
 - `make dbt-build` passes, including the Java/SQL diff parity test.
-- The quality report exists for every run and is visible in Dagster, Grafana and the frontend.
-- Grafana shows the four dashboards with real data, and each alert has fired once in a test.
+- The quality report exists for every run and is visible in Dagster and the frontend.
 - The frontend shows real data for search, company, events, network, pipeline and insights.
 - The README explains the source, the model and the trade-offs in under 5 minutes of reading.
 
@@ -606,7 +545,7 @@ Rules:
 - Run every build, test and tool in a container, never on the host. If a tool is missing, add
   it to an image or a compose service.
 - After each milestone: run `make build` (plus `make dbt-build` from Milestone 6 and the
-  frontend build from Milestone 10 on), summarize what changed, and tick the checkboxes in
+  frontend build from Milestone 9 on), summarize what changed, and tick the checkboxes in
   this file.
 - Small commits with clear messages.
 - Never commit raw data, lake files, marts or person-level data.

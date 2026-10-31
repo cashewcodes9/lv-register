@@ -11,6 +11,7 @@ on [data.gov.lv](https://data.gov.lv/dati/lv/organization/ur) under CC0, updated
 
 - [PLAN.md](PLAN.md): goal, scope, tech stack and milestones
 - [docs/architecture.md](docs/architecture.md): layers, pipeline, event rules, modules
+- [ROADMAP.md](ROADMAP.md): after the MVP, starting with observability and monitoring
 - Reference design: [Oversee](https://github.com/cashewcodes9/Oversee), the same layer
   design in Python
 
@@ -19,9 +20,7 @@ Stack:
   storage (SeaweedFS)
 - **Models and data tests:** dbt (dbt-duckdb)
 - **Orchestration:** Dagster: daily partitions, schedule, asset checks, backfills
-- **Serving:** Elasticsearch, Spring Boot API (API only), React + TypeScript
-- **Observability:** OpenTelemetry, Grafana, Prometheus, Loki, Tempo: dashboards and alerts
-  as code
+- **Serving:** Elasticsearch, Spring Boot 4 (API only), React + TypeScript
 
 Everything builds and runs in Docker; the host needs only Docker and git.
 

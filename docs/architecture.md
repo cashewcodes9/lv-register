@@ -3,7 +3,7 @@
 lv-register turns the daily open data of the Latvian Register of Enterprises (Uzņēmumu
 reģistrs, UR) into typed company snapshots and a feed of change events, then serves them
 through a read-only API and a React app. Dagster schedules and checks every step, dbt models
-and tests the data in SQL, and Grafana shows logs, metrics, traces and alerts.
+and tests the data in SQL.
 
 It follows the layer design of [Oversee](https://github.com/cashewcodes9/Oversee): raw cache,
 S3 lake, cleaning with drop counts, dbt, Dagster assets. The domain logic is in Java 25.
@@ -44,7 +44,7 @@ interface exists for unit tests.
 
 **History:** UR publishes only the current state. The lake is the only copy of past days, so
 reprocessing and backfills always read from the lake, never from UR. A day that is not
-downloaded on the day is lost, which is why freshness has its own alert.
+downloaded on the day is lost, which is why Dagster checks freshness every day.
 
 DuckDB reads all days of a file as one table:
 
@@ -123,14 +123,14 @@ the same bytes and the same id.
 ## Java modules
 
 ```
-            ┌──────────────── cli (Picocli, manual wiring) ────────────────┐
-            ▼                                                              ▼
-ingest  lake  normalize  diff  quality  index  telemetry  pipes          api (Spring Boot)
-  │      │       │        │      │        │        │        │              │
-  └──────┴───────┴────────┴──┬───┴────────┴────────┴────────┘              │
-            storage ◄────────┤                                             │
-                             ▼                                             │
-                          domain ◄─────────────────────────────────────────┘
+   ┌──────────── cli (Picocli, manual wiring) ─────┐
+   ▼        uses every pipeline module             ▼
+ingest  lake  normalize  diff  quality  index  pipes      api (Spring Boot 4)
+  │      │       │        │      │        │      │                │
+  └──────┴───────┴────────┴──┬───┴────────┴──────┘                │
+         storage ◄───────────┤                                    │
+                             ▼                                    │
+                          domain ◄────────────────────────────────┘
 ```
 
 | Module | Holds | May depend on |
@@ -143,10 +143,9 @@ ingest  lake  normalize  diff  quality  index  telemetry  pipes          api (Sp
 | `diff` | `diff(Snapshot, Snapshot)`, event ids | `domain` |
 | `quality` | run record, report | `domain` |
 | `index` | Elasticsearch upserts and read queries | `domain` |
-| `telemetry` | OTel SDK setup, metric and span names, MDC keys | none of the above |
 | `pipes` | Dagster Pipes messages (materializations, metadata, check results) | `domain` |
 | `cli` | one Picocli command per step; `Main` builds every object by hand | pipeline modules |
-| `api` | Spring Boot controllers, DTO records, web config | `domain`, `index` |
+| `api` | Spring Boot 4 controllers, DTO records, web config | `domain`, `index` |
 
 Rules, checked by ArchUnit in the build:
 - Only `api` imports `org.springframework`.
@@ -240,58 +239,29 @@ module writes the small JSON message protocol itself.
 - **Schedule:** `daily_pipeline` once a day, Europe/Riga time, set from Milestone 1's finding
   of when UR publishes. On by default.
 - **Freshness:** freshness checks on `ur_raw_files` and `search_index`, so a missed day turns
-  red in the UI and fires an alert.
-- **Sensors:** run failure sensor posts to the alert webhook.
+  red in the UI.
+- **Sensors:** run failure sensor logs the failure and posts to an optional webhook (`.env`).
 - **Backfills:** re-materializing past partitions reads from the lake. `ur_raw_files` cannot
   be backfilled for past days; its partitions only exist for days actually captured.
 - **Blocking checks** stop downstream assets, so a broken file never reaches Elasticsearch.
 
-## Observability and monitoring
+## Logging and monitoring
 
-```
-cli, api, dagster, dbt ── JSON logs (stdout) ──► alloy (Docker discovery) ──► loki ────┐
-cli (OTel SDK), api (agent) ── OTLP metrics, traces ──► alloy ──► prometheus, tempo ───┤
-elasticsearch, postgres exporters, seaweedfs ── /metrics ──► prometheus (scrape) ──────┤
-                                                                                       ▼
-                                                      grafana: dashboards, alerts ─► contact points
-```
+The MVP keeps what is needed to notice a missed or broken day. Metrics, traces, dashboards
+and alerts come later ([ROADMAP.md](../ROADMAP.md), section 1).
 
-**Correlation:** every pipeline log line, metric and span carries `run_id`, `dagster_run_id`,
-`step` and `partition_date` (MDC in Java, resource attributes in OTel). API log lines carry the
-trace id. Grafana links a log line to its trace and to the Dagster run.
+- **Logs:** every container logs JSON to stdout. Pipeline lines carry `run_id`,
+  `dagster_run_id`, `step` and `partition_date` (SLF4J MDC), so one run can be followed from
+  `docker compose logs` or the Dagster run view.
+- **Dagster:** asset checks, freshness checks, the run failure sensor and retries (above) are
+  the alerting layer for now.
+- **Health:** Actuator health for the API with an Elasticsearch indicator; healthchecks on
+  every compose service.
+- **Pipeline page:** the frontend shows run history and quality reports from the `runs` index.
 
-**Batch metrics:** CLI runs end before Prometheus could scrape them, so the CLI pushes metrics
-over OTLP and flushes them before exit. Gauges such as "last successful partition date per
-step" make freshness alerts possible.
-
-**Dashboards** (provisioned from `docker/grafana/dashboards/`):
-
-| Dashboard | Shows |
-|---|---|
-| Pipeline health | last successful day per step, run duration, failures, freshness |
-| Data quality | rows kept and dropped per rule, orphans, unmapped values, events per type with thresholds |
-| API | request rate, error rate, p50/p95/p99 latency, rate-limit rejections, cache hits |
-| Infrastructure | Elasticsearch health, heap and disk; SeaweedFS storage; JVM; Postgres; container CPU and memory |
-
-**Alerts** (Grafana rules as code; each links to `docs/runbook.md`):
-
-| Alert | Why it matters |
-|---|---|
-| no successful `download` for today by the deadline | the day is lost for good |
-| a step failed after retries | data stops flowing |
-| drop share above 1% for a file | source format changed or a rule is wrong |
-| event type above its spike threshold | usually a parsing problem |
-| orphans or unmapped values grew day over day | source drift |
-| API 5xx above 1% or p95 above 500 ms for 10 min | users affected |
-| Elasticsearch not green, or a volume above 80% disk | serving at risk |
-
-Thresholds start as listed and are tuned on real data. Dagster's checks and failure sensor
-overlap on purpose: Dagster shows the asset that broke, Grafana shows the trend and alerts
-when nothing ran at all.
-
-**Personal data:** logs, metrics, spans and Dagster metadata carry registration numbers and
-counts only, never person names or keys. A test runs the CLI on a fixture and scans its log
-output. Grafana, Dagster, SeaweedFS and Elasticsearch listen on localhost only.
+**Personal data:** logs and Dagster metadata carry registration numbers and counts only,
+never person names or keys. A test runs the CLI on a fixture and scans its log output.
+Dagster, SeaweedFS and Elasticsearch listen on localhost only.
 
 ## Serving
 
@@ -311,13 +281,13 @@ output. Grafana, Dagster, SeaweedFS and Elasticsearch listen on localhost only.
 - Errors as RFC 7807 `ProblemDetail` from one `@RestControllerAdvice`.
 - Bucket4j rate limit per IP; Caffeine cache for stats and search.
 - CORS only for the Vite dev server.
-- Actuator health (with Elasticsearch), Micrometer metrics over OTLP, OTel Java agent for
-  traces, springdoc OpenAPI. The spec generates the frontend's TypeScript types.
+- Actuator health (with Elasticsearch) and springdoc OpenAPI. The spec generates the
+  frontend's TypeScript types.
 - Persons appear only inside one company's response. No endpoint lists persons.
 
 **Frontend** (`web/`, React + TypeScript + Vite): Overview, Search, Company, Network,
 Changes, Pipeline and Insights pages. It talks only to the API, through TanStack Query and
-the generated types. The Pipeline page links each run to its Dagster run and Grafana view. In
+the generated types. The Pipeline page links each run to its Dagster run. In
 production Spring Boot serves `web/dist`, so API and frontend are one service.
 
 ## Containers
@@ -328,7 +298,6 @@ Every build, test and run happens in Docker; the host needs only Docker and git.
 |---|---|
 | `core` | `lake` (SeaweedFS), `elasticsearch`, `api` |
 | `orchestration` | `dagster-postgres`, `dagster-code`, `dagster-webserver`, `dagster-daemon` |
-| `observability` | `alloy`, `prometheus`, `loki`, `tempo`, `grafana`, `es-exporter`, `pg-exporter` |
 | `dev` | `build` (JDK 25, Gradle), `web-dev` (Node 22, Vite), `duckdb` |
 | on demand | `cli` (launched by Dagster or `docker compose run`) |
 
@@ -337,7 +306,6 @@ Every build, test and run happens in Docker; the host needs only Docker and git.
 | 8080 | API and frontend |
 | 5173 | Vite dev server |
 | 3000 | Dagster UI |
-| 3001 | Grafana |
 | 8333, 8888 | SeaweedFS S3 API, file browser |
 | 9200 | Elasticsearch |
 
@@ -367,13 +335,9 @@ the mounted Docker socket; `TESTCONTAINERS_HOST_OVERRIDE` points them at the hos
 | dbt | generic and singular tests, Java/SQL diff parity |
 | Dagster (pytest) | definitions load; asset graph, partition mapping and checks as expected |
 | Privacy | no person data in CLI logs on a fixture run |
-| Alerts | each alert fired once on purpose (Milestone 8) |
 
 ## Open questions
 
-- **Spring Boot version:** the plan said Spring Boot 3. 3.5 is the last 3.x line, and its
-  open-source support window is around mid-2026 (to verify). Spring Boot 4 is current. To
-  decide in Milestone 2.
 - **Which UR files are in the MVP:** Milestone 1.
 - **When UR publishes each day:** Milestone 1; sets the schedule and the freshness deadline.
 - **Person key:** depends on what the officer and owner files contain.
