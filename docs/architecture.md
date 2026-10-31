@@ -180,6 +180,43 @@ Changes, Pipeline and Insights pages. It talks only to the API, through TanStack
 the generated types. In production Spring Boot serves `web/dist`, so API and frontend are one
 service.
 
+## Containers
+
+Every build, test and run happens in Docker. The host needs only Docker and git.
+
+```
+                 docker-compose.yml
+  ┌──────────────────────────────────────────────────────────────┐
+  │ build    temurin 25 JDK   ./gradlew build ──► jars           │
+  │ cli      temurin 25 JRE   lv-register <step> ──► ./data      │
+  │ api      temurin 25 JRE   Spring Boot + web/dist  :8080 ─┐   │
+  │ web-dev  node 22          Vite dev server        :5173 ──┤   │
+  │ duckdb   DuckDB CLI       ad-hoc SQL on ./data/lake      │   │
+  │ elasticsearch 8           companies, events, runs ◄──────┘   │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+| Service | Image | Runs | Mounts and volumes |
+|---|---|---|---|
+| `build` | `eclipse-temurin:25-jdk` | Gradle wrapper: build, tests | source tree; Gradle cache volume; Docker socket for Testcontainers |
+| `cli` | `Dockerfile` target `cli` | pipeline steps | `./data` at `/data` |
+| `api` | `Dockerfile` target `api` | API and built frontend on one port | none |
+| `web-dev` | `node:22` | Vite dev server, `npm` | `web/`; `node_modules` volume |
+| `duckdb` | DuckDB CLI image | SQL over the lake | `./data` read-only |
+| `elasticsearch` | `elasticsearch:8.x`, single node | serving store | data volume |
+
+**Images:** one multi-stage `Dockerfile`. Stage `web` builds `web/dist` with Node. Stage
+`jdk` builds the jars with the Gradle wrapper and puts `web/dist` into the API jar. Final
+stages `cli` and `api` copy their jar onto `eclipse-temurin:25-jre`. The `api` target is the
+production image. Image versions are pinned; containers run as a non-root user.
+
+**Testcontainers:** tests in the `build` container start Elasticsearch through the mounted
+Docker socket. `TESTCONTAINERS_HOST_OVERRIDE` points them at the host, since `localhost`
+inside the container is not where the started containers listen.
+
+**Makefile:** `make build`, `make test`, `make up`, `make down`, `make run DATE=...`,
+`make web-dev`, `make duckdb`. CI runs the same images and targets.
+
 ## Quality and testing
 
 | Test | Checks |

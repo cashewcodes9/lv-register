@@ -15,7 +15,8 @@ on [data.gov.lv](https://data.gov.lv/dati/lv/organization/ur) under CC0, updated
   design in Python
 
 Stack: Java 25, Gradle, Picocli, DuckDB (Parquet lake), Elasticsearch, Spring Boot (API
-only), React + TypeScript.
+only), React + TypeScript. Everything builds and runs in Docker; the host needs only Docker
+and git.
 
 ## Personal data
 

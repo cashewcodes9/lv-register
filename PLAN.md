@@ -68,6 +68,7 @@ Java 25, matching North Data's backend (modern Java, functional style).
 | Search | Elasticsearch 8 (Docker Compose locally) |
 | Tests | JUnit 5, AssertJ, jqwik (property tests), Testcontainers (Elasticsearch), ArchUnit |
 | Logging | SLF4J + Logback, run id in MDC |
+| Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker and git |
 | CI | GitHub Actions: backend build + test, frontend lint + build |
 | Frontend | React + TypeScript (Vite), TanStack Query for data fetching, Recharts for charts, react-force-graph or d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
 
@@ -121,7 +122,34 @@ lv-register index     --date 2026-11-02
 lv-register run       --date 2026-11-02     # all steps
 ```
 
-The API runs separately: `./gradlew :modules:api:bootRun`. The CLI never boots Spring.
+The API runs separately as its own service. The CLI never boots Spring. All commands run in
+containers (section 6.1), for example
+`docker compose run --rm cli download --date 2026-11-02`.
+
+### 6.1 Containers
+
+Every stack (JDK, Gradle, Node, DuckDB, Elasticsearch) runs in Docker. Nothing is installed on
+the host except Docker and git, so the project builds the same on any machine and in CI.
+
+| Compose service | Image | Purpose |
+|---|---|---|
+| `elasticsearch` | `elasticsearch:8.x`, single node, security off locally | serving store, volume for its data |
+| `build` | `eclipse-temurin:25-jdk` | runs the Gradle wrapper: `./gradlew build`, tests. Gradle cache in a named volume |
+| `cli` | built from `Dockerfile`, target `cli` (JRE 25 + CLI jar) | runs pipeline steps; `./data` mounted at `/data` |
+| `api` | built from `Dockerfile`, target `api` (JRE 25 + Spring Boot jar with `web/dist` inside) | API and frontend on one port |
+| `web-dev` | `node:22` (LTS) | Vite dev server with hot reload; `npm` commands; `node_modules` in a named volume |
+| `duckdb` | small image with the DuckDB CLI | ad-hoc SQL over the lake for source exploration (Milestone 1) |
+
+- One multi-stage `Dockerfile`: stage `web` builds the React app with Node, stage `jdk` builds
+  the jars with the Gradle wrapper, final stages `cli` and `api` copy the jars onto
+  `eclipse-temurin:25-jre`. Production image = target `api`.
+- Pin image versions (tag or digest). No `latest`.
+- Containers run as a non-root user; files written to `./data` must stay owned by the host user.
+- Testcontainers inside the `build` container: mount `/var/run/docker.sock` and set
+  `TESTCONTAINERS_HOST_OVERRIDE` so tests reach the containers they start.
+- A `Makefile` wraps the common commands (`make build`, `make test`, `make up`, `make run
+  DATE=...`, `make web-dev`, `make down`), as in Oversee.
+- CI uses the same images, so a green CI means a green local build.
 
 ### Module layout
 
@@ -129,7 +157,9 @@ The API runs separately: `./gradlew :modules:api:bootRun`. The CLI never boots S
 lv-register/
   build.gradle.kts
   settings.gradle.kts
-  docker-compose.yml          elasticsearch
+  Dockerfile                  multi-stage: web, jdk, cli, api
+  docker-compose.yml          elasticsearch, build, cli, api, web-dev, duckdb
+  Makefile                    wrappers around docker compose
   modules/
     domain/       records, sealed types, no I/O, no dependencies
     ingest/       download, sha256 manifest, raw cache
@@ -304,6 +334,8 @@ Rules:
 ## 15. Milestones
 
 ### Milestone 1: Source exploration
+- [ ] Minimal `docker-compose.yml` with the `duckdb` service (section 6.1) for exploring the
+      files; no tools installed on the host
 - [ ] Download one day of every UR file
 - [ ] Record columns, types, value sets, row counts, encoding, delimiters, quirks in
       `docs/source-assessment.md`
@@ -313,6 +345,8 @@ Rules:
 - [ ] STOP and show me the assessment before continuing
 
 ### Milestone 2: Project setup + domain
+- [ ] Multi-stage `Dockerfile` and all compose services from section 6.1; `Makefile`
+- [ ] `make build` runs the Gradle build in the `build` container from a clean clone
 - [ ] Gradle multi-module, Java 25 toolchain
 - [ ] GitHub Actions CI (build + test)
 - [ ] `domain` module: records and sealed types, one invariant test per record
@@ -336,7 +370,8 @@ Rules:
 - [ ] Run record and quality report (section 11)
 - [ ] Elasticsearch mappings for companies, events and runs
 - [ ] Indexer with upserts, tested with Testcontainers
-- [ ] docker-compose.yml for local Elasticsearch
+- [ ] `elasticsearch` compose service with a data volume; Testcontainers working from the
+      `build` container
 
 ### Milestone 6: Value feature + Spring Boot API
 - [ ] Value feature from section 10
@@ -353,7 +388,9 @@ Rules:
 - [ ] TypeScript types generated from the OpenAPI spec
 - [ ] All pages from section 14
 - [ ] Frontend lint + build in CI
-- [ ] Spring Boot serves `web/dist` in production; one command starts API + frontend
+- [ ] `web-dev` compose service with hot reload against the API
+- [ ] Spring Boot serves `web/dist` in production; `make up` starts Elasticsearch, API and
+      frontend in containers with one command
 
 ### Milestone 8: Polish
 - [ ] README: problem, architecture diagram, screenshots, how to run in under 5 commands,
@@ -375,8 +412,11 @@ Rules:
 
 ## 16. Definition of done
 
-- `./gradlew build` passes from a clean clone, including the ArchUnit boundary test.
-- `lv-register run --date <d>` runs the full pipeline for a day.
+- `make build` (Gradle in the `build` container) passes from a clean clone, including the
+  ArchUnit boundary test. The host needs only Docker and git.
+- `make run DATE=<d>` (`lv-register run --date <d>` in the `cli` container) runs the full
+  pipeline for a day.
+- `make up` starts Elasticsearch, API and frontend.
 - Re-running any day produces no new events (tested).
 - The quality report exists for every run and is visible in the frontend.
 - The frontend shows real data for search, company, events, network, pipeline and insights.
@@ -385,7 +425,9 @@ Rules:
 ## 17. Working rules for you (the agent)
 
 - Start with Milestone 1. Show me the source assessment before writing domain code.
-- After each milestone: run `./gradlew build` (and the frontend build from Milestone 7 on),
+- Run every build, test and tool in a container, never on the host. If a tool is missing, add
+  it to an image or a compose service.
+- After each milestone: run `make build` (and the frontend build from Milestone 7 on),
   summarize what changed, and tick the checkboxes in this file.
 - Small commits with clear messages.
 - Never commit raw data, lake files or person-level data.
