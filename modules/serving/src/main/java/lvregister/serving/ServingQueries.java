@@ -24,4 +24,10 @@ public interface ServingQueries {
     Page<RunView> runs(int page, int size);
 
     Optional<RunView> run(String runId);
+
+    /** All rows of one stat, ordered by key. */
+    java.util.List<StatView> stats(String stat);
+
+    /** Results of one feature, best rank first. */
+    Page<FeatureView> feature(String feature, int page, int size);
 }

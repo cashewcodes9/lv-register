@@ -1,0 +1,35 @@
+# dbt over the lake (docs/architecture.md, "Transformation with dbt"). SQL only; the domain
+# logic is in Java, and the SQL diff here exists to check it (parity test).
+name: lv_register
+version: "0.1.0"
+config-version: 2
+profile: lv_register
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+vars:
+  # An address counts as a mass-registration address from this many active companies on.
+  mass_address_min_companies: 20
+
+models:
+  lv_register:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: external
+      +format: parquet
+
+seeds:
+  lv_register:
+    +column_types:
+      code: varchar
+      family: varchar
+
+tests:
+  lv_register:
+    +severity: error

@@ -94,6 +94,8 @@ services:
       # Optional: RealCaptureCheck normalizes this capture from the compose lake.
       LV_REAL_CAPTURE_DATE: ${LV_REAL_CAPTURE_DATE:-}
       LV_TEST_HEAP: ${LV_TEST_HEAP:-512m}
+      # Optional: DbtFixturesTest rewrites transform/fixtures/lake when set to 1.
+      LV_WRITE_DBT_FIXTURES: ${LV_WRITE_DBT_FIXTURES:-}
       DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
 
   cli:
@@ -125,6 +127,34 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+
+  # dbt over the lake (Milestone 6); the same image gets Dagster in Milestone 7.
+  dbt:
+    profiles: ["tools"]
+    build:
+      context: orchestration
+      args:
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: lv-register/orchestration:dev
+    <<: *env
+    environment:
+      DBT_TARGET: ${DBT_TARGET:-lake}
+      DBT_PROFILES_DIR: /work/transform
+      DBT_TARGET_PATH: /tmp/dbt/target
+      DBT_LOG_PATH: /tmp/dbt/logs
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://lake:8333}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lvdev}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lvdev-local-only-secret}
+      S3_BUCKET_MARTS: ${S3_BUCKET_MARTS:-lv-marts}
+      LV_LAKE_ROOT: ${LV_LAKE_ROOT:-s3://lv-lake}
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
+    volumes:
+      - ./transform:/work/transform
+    depends_on:
+      lake-init:
+        condition: service_completed_successfully
 
   duckdb:
     profiles: ["tools"]

@@ -21,6 +21,12 @@ public interface ServingWriter {
     /** Upserts events by id. */
     Upserted upsertEvents(List<EventView> events);
 
+    /** Replaces all rows of one stat (the marts are rebuilt every run). */
+    void replaceStats(String stat, List<StatView> rows);
+
+    /** Replaces all results of one feature. */
+    void replaceFeature(String feature, List<FeatureView> rows);
+
     /** Upserts a run by run id. */
     void upsertRun(RunView run);
 }

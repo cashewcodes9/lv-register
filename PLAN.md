@@ -2,6 +2,7 @@
 
 You are helping me build a portfolio project for the North Data "Modern Java Developer"
 application (Hamburg). Follow this plan milestone by milestone. Ask me before changing scope.
+The reasons behind the main decisions are collected in [docs/FAQ.md](docs/FAQ.md).
 
 Goal: show that I can take a country North Data does not cover yet, understand its sources on
 my own, and turn them into clean, tested, event-based company data, with a React frontend to
@@ -205,6 +206,8 @@ project builds the same on any machine and in CI.
 - CI uses the same images, so a green CI means a green local build.
 
 ### 6.2 Capture schedule, retention and on/off
+
+Why weekly and how captures are dated: [FAQ](docs/FAQ.md#why-weekly-captures-and-how-are-captures-dated).
 
 This is a demo, so it captures **once a week**, not every day.
 
@@ -543,16 +546,20 @@ Rules:
 - [x] Test: no person data in CLI logs on a fixture run
 
 ### Milestone 6: dbt
-- [ ] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
-- [ ] Sources with tests; staging and intermediate models per MVP file
-- [ ] Marts: `dim_companies`, `fct_company_events`, stats aggregates, value feature
+Why dbt, and what marts are: [FAQ](docs/FAQ.md#what-does-dbt-add).
+
+- [x] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
+- [x] Sources with tests; staging and intermediate models per MVP file
+- [x] Marts: `dim_companies`, `fct_company_events`, stats aggregates, value feature
       (section 10), written as Parquet to `s3://lv-marts`
-- [ ] SQL diff model and the parity test against the Java events (section 9)
-- [ ] Singular tests from section 9; exposures for the API and frontend
-- [ ] `make dbt-build`, `make dbt-docs` (lineage graph)
-- [ ] Indexer loads stats and feature marts into the serving store
+- [x] SQL diff model and the parity test against the Java events (section 9)
+- [x] Singular tests from section 9; exposures for the API and frontend
+- [x] `make dbt-build`, `make dbt-docs` (lineage graph)
+- [x] Indexer loads stats and feature marts into the serving store
 
 ### Milestone 7: Dagster orchestration
+Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
+
 - [ ] `orchestration/` Python project and image; `dagster` database in the `postgres` service;
       compose services `dagster-code`, `dagster-webserver`, `dagster-daemon`
 - [ ] `pipes` module: the CLI reports materializations, metadata and check results to Dagster

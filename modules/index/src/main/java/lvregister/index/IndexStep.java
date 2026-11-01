@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import lvregister.diff.DiffStep;
 import lvregister.domain.Snapshot;
 import lvregister.lake.SnapshotLoader;
@@ -20,9 +21,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The {@code index} step: upserts the companies of a capture (from its snapshot), its events
- * and its run report into the serving store, through {@link ServingWriter} only. The run is
- * written last, so a run in the store means its data is there. Re-running changes nothing.
+ * The {@code index} step: writes a capture into the serving store, through
+ * {@link ServingWriter} only. It upserts the companies (from the snapshot) and the events,
+ * replaces the stats and features from the dbt marts (skipped with a warning when dbt has not
+ * built them yet), and writes the run report last, so a run in the store means its data is
+ * there. Re-running changes nothing.
  */
 public final class IndexStep {
 
@@ -32,11 +35,13 @@ public final class IndexStep {
     private final ObjectStore lake;
     private final SnapshotLoader loader;
     private final ServingWriter writer;
+    private final MartReader marts;
 
-    public IndexStep(ObjectStore lake, SnapshotLoader loader, ServingWriter writer) {
+    public IndexStep(ObjectStore lake, SnapshotLoader loader, ServingWriter writer, MartReader marts) {
         this.lake = lake;
         this.loader = loader;
         this.writer = writer;
+        this.marts = marts;
     }
 
     /** Rows written and unchanged per kind. */
@@ -56,6 +61,13 @@ public final class IndexStep {
         ServingWriter.Upserted companies = writer.upsertCompanies(snapshot.companies().values().stream()
                 .map(c -> Views.company(c, snapshot.rolesOf(c.regNumber()), date)));
         ServingWriter.Upserted events = writer.upsertEvents(events(date));
+        Optional<MartReader.Marts> built = marts.read();
+        if (built.isPresent()) {
+            built.get().stats().forEach(writer::replaceStats);
+            built.get().features().forEach(writer::replaceFeature);
+        } else {
+            LOG.warn("index {}: no dbt marts in lv-marts yet; stats and features not loaded", date);
+        }
         writer.upsertRun(new RunView(report.runId(), date, report.status().name(),
                 new String(reportJson, StandardCharsets.UTF_8)));
         LOG.info("index {}: companies {} written, {} unchanged; events {} written, {} already there; run {} ({})",

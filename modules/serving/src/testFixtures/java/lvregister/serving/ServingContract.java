@@ -191,4 +191,38 @@ public abstract class ServingContract {
         assertThat(queries().run("run-2")).contains(new RunView("run-2", D2, "OK", "{\"status\":\"OK\"}"));
         assertThat(queries().run("run-9")).isEmpty();
     }
+
+    // ---- stats and features ----
+
+    @Test
+    void statsAreReplacedAsAWhole() {
+        writer().replaceStats("events_per_capture", List.of(
+                new StatView("events_per_capture", java.util.Map.of("capture_date", "2026-11-09", "event_type", "NAME_CHANGED"), 12),
+                new StatView("events_per_capture", java.util.Map.of("capture_date", "2026-11-09", "event_type", "TERMINATED"), 3)));
+        writer().replaceStats("companies", List.of(new StatView("companies", java.util.Map.of("status", "ACTIVE"), 100)));
+
+        writer().replaceStats("events_per_capture", List.of(
+                new StatView("events_per_capture", java.util.Map.of("capture_date", "2026-11-16", "event_type", "NAME_CHANGED"), 7)));
+
+        assertThat(queries().stats("events_per_capture")).containsExactly(
+                new StatView("events_per_capture", java.util.Map.of("capture_date", "2026-11-16", "event_type", "NAME_CHANGED"), 7));
+        assertThat(queries().stats("companies")).hasSize(1);
+        assertThat(queries().stats("nothing")).isEmpty();
+    }
+
+    @Test
+    void featuresByRankAndReplacedAsAWhole() {
+        writer().replaceFeature("mass_registration_addresses", List.of(
+                new FeatureView("mass_registration_addresses", "106", 2, "{\"active_companies\":157}"),
+                new FeatureView("mass_registration_addresses", "105", 1, "{\"active_companies\":185}"),
+                new FeatureView("mass_registration_addresses", "107", 3, "{\"active_companies\":132}")));
+
+        Page<FeatureView> page = queries().feature("mass_registration_addresses", 0, 2);
+
+        assertThat(page.total()).isEqualTo(3);
+        assertThat(page.items()).extracting(FeatureView::key).containsExactly("105", "106");
+        assertThat(page.items().getFirst().json()).isEqualTo("{\"active_companies\":185}");
+        writer().replaceFeature("mass_registration_addresses", List.of());
+        assertThat(queries().feature("mass_registration_addresses", 0, 10).total()).isZero();
+    }
 }

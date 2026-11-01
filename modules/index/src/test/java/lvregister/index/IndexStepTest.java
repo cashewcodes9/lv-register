@@ -22,8 +22,10 @@ import lvregister.quality.QualityStep;
 import lvregister.quality.Thresholds;
 import lvregister.serving.CompanyView;
 import lvregister.serving.EventView;
+import lvregister.serving.FeatureView;
 import lvregister.serving.RunView;
 import lvregister.serving.ServingWriter;
+import lvregister.serving.StatView;
 import lvregister.storage.LocalDirectoryObjectStore;
 import lvregister.storage.ObjectStore;
 import org.junit.jupiter.api.AfterEach;
@@ -42,6 +44,8 @@ class IndexStepTest {
         final List<CompanyView> companies = new ArrayList<>();
         final List<EventView> events = new ArrayList<>();
         final List<RunView> runs = new ArrayList<>();
+        final Map<String, List<StatView>> stats = new java.util.TreeMap<>();
+        final Map<String, List<FeatureView>> features = new java.util.TreeMap<>();
 
         @Override
         public void prepare() {
@@ -63,6 +67,18 @@ class IndexStepTest {
         }
 
         @Override
+        public void replaceStats(String stat, List<StatView> rows) {
+            calls.add("stats:" + stat);
+            stats.put(stat, rows);
+        }
+
+        @Override
+        public void replaceFeature(String feature, List<FeatureView> rows) {
+            calls.add("feature:" + feature);
+            features.put(feature, rows);
+        }
+
+        @Override
         public void upsertRun(RunView run) {
             calls.add("run");
             runs.add(run);
@@ -77,6 +93,7 @@ class IndexStepTest {
     private DuckDb db;
     private SnapshotLoader loader;
     private RecordingWriter writer;
+    private ObjectStore marts;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -85,6 +102,7 @@ class IndexStepTest {
         db = DuckDb.open(new DuckDbSettings("256MB", 1, tmp.resolve("duckdb"), Optional.empty()), Optional.empty());
         loader = new SnapshotLoader(new LakeReader(db, lake));
         writer = new RecordingWriter();
+        marts = new LocalDirectoryObjectStore(tmp.resolve("marts"));
     }
 
     @AfterEach
@@ -104,7 +122,7 @@ class IndexStepTest {
         pipeline(D1, COMPANY_A + COMPANY_B, OFFICER_A + OFFICER_B);
         pipeline(D2, COMPANY_A.replace("Alfa", "Alfa Plus") + COMPANY_B, OFFICER_A);
 
-        IndexStep.Result result = new IndexStep(lake, loader, writer).run(D2);
+        IndexStep.Result result = new IndexStep(lake, loader, writer, new MartReader(db, marts)).run(D2);
 
         assertThat(writer.calls).containsExactly("prepare", "companies", "events", "run");
         assertThat(writer.companies).extracting(CompanyView::regNumber).containsExactlyInAnyOrder("40003000001", "40003000002");
@@ -129,8 +147,34 @@ class IndexStepTest {
     void refusesWithoutAQualityReport() throws Exception {
         capture(raw, lake, db, tmp.resolve("work"), D1, files(COMPANY_A, OFFICER_A));
 
-        assertThatIllegalStateException().isThrownBy(() -> new IndexStep(lake, loader, writer).run(D1))
+        assertThatIllegalStateException().isThrownBy(() -> new IndexStep(lake, loader, writer, new MartReader(db, marts)).run(D1))
                 .withMessageContaining("run quality first");
         assertThat(writer.calls).isEmpty();
+    }
+
+    @Test
+    void loadsStatsAndFeaturesWhenTheMartsExist() throws Exception {
+        pipeline(D1, COMPANY_A + COMPANY_B, OFFICER_A + OFFICER_B);
+        java.nio.file.Files.createDirectories(tmp.resolve("marts"));
+        db.execute("COPY (SELECT 'LLC' AS legal_family, 'SIA' AS legal_form_code, 'ACTIVE' AS status, NULL AS region_code, 2 AS companies)"
+                + " TO " + DuckDb.literal(marts.location("agg_companies_by_form_status_region.parquet")) + " (FORMAT parquet)");
+        db.execute("COPY (SELECT DATE '2026-11-09' AS capture_date, DATE '2026-11-02' AS previous_capture, 7 AS gap_days,"
+                + " 'NAME_CHANGED' AS event_type, 5 AS events) TO "
+                + DuckDb.literal(marts.location("agg_events_per_capture.parquet")) + " (FORMAT parquet)");
+        db.execute("COPY (SELECT 1 AS rank, 106809937 AS vzd_id, 'Rīga, Testa iela 1' AS address_line, 185 AS active_companies) TO "
+                + DuckDb.literal(marts.location("feat_mass_registration_addresses.parquet")) + " (FORMAT parquet)");
+
+        new IndexStep(lake, loader, writer, new MartReader(db, marts)).run(D1);
+
+        assertThat(writer.calls).containsExactly("prepare", "companies", "events", "stats:companies_by_form_status_region",
+                "stats:events_per_capture", "feature:mass_registration_addresses", "run");
+        assertThat(writer.stats.get(MartReader.COMPANIES_STAT)).containsExactly(new StatView(MartReader.COMPANIES_STAT,
+                Map.of("legal_family", "LLC", "legal_form_code", "SIA", "status", "ACTIVE", "region_code", ""), 2));
+        assertThat(writer.stats.get(MartReader.EVENTS_STAT).getFirst().dimensions()).containsEntry("capture_date", "2026-11-09");
+        assertThat(writer.features.get(MartReader.MASS_ADDRESSES)).singleElement().satisfies(f -> {
+            assertThat(f.key()).isEqualTo("106809937");
+            assertThat(f.rank()).isEqualTo(1);
+            assertThat(f.json()).contains("\"active_companies\":185", "Rīga");
+        });
     }
 }

@@ -1,0 +1,35 @@
+# Two targets: `lake` reads s3://lv-lake and writes marts to s3://lv-marts (SeaweedFS);
+# `fixtures` reads transform/fixtures/lake and writes marts to /tmp (CI, no S3).
+lv_register:
+  target: "{{ env_var('DBT_TARGET', 'lake') }}"
+  outputs:
+    lake:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '/tmp/dbt/lv_register.duckdb') }}"
+      threads: 1
+      extensions: [httpfs, json]
+      settings:
+        memory_limit: "{{ env_var('DUCKDB_MEMORY_LIMIT', '1GB') }}"
+        threads: 1
+        extension_directory: /opt/duckdb/extensions
+        autoinstall_known_extensions: false
+      secrets:
+        - type: s3
+          key_id: "{{ env_var('S3_ACCESS_KEY', 'lvdev') }}"
+          secret: "{{ env_var('S3_SECRET_KEY', 'lvdev-local-only-secret') }}"
+          region: "{{ env_var('S3_REGION', 'us-east-1') }}"
+          endpoint: "{{ env_var('S3_ENDPOINT', 'http://lake:8333') | replace('https://', '') | replace('http://', '') }}"
+          url_style: path
+          use_ssl: "{{ 'true' if env_var('S3_ENDPOINT', 'http://lake:8333').startswith('https') else 'false' }}"
+      external_root: "s3://{{ env_var('S3_BUCKET_MARTS', 'lv-marts') }}"
+    fixtures:
+      type: duckdb
+      path: /tmp/dbt/fixtures.duckdb
+      threads: 1
+      extensions: [json]
+      settings:
+        memory_limit: 512MB
+        threads: 1
+        extension_directory: /opt/duckdb/extensions
+        autoinstall_known_extensions: false
+      external_root: /tmp/dbt
