@@ -20,7 +20,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 7. Dagster orchestration | done 2026-11-01, merged into `dev` (PR #5, CI green) |
 | 8. Spring Boot API | done 2026-11-01, merged into `dev` (PR #6, CI green) |
 | 9. React frontend | done 2026-11-01, merged into `dev` (PR #7, CI green) |
-| 10 | not started |
+| 10. Polish | in progress 2026-11-01: README rewritten, demo GIF (names pixelated), marts FAQ; ADRs and source assessment still open |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -276,7 +276,10 @@ board member removed; 47404003378: farm owner removed).
 
 ## Milestone 10: next steps, in order
 
-0. After the Milestone 9 PR is merged: `git switch dev && git pull && git switch -c milestone/10-polish`.
+0. Branch `milestone/10-polish` exists (README, demo GIF in `docs/images/demo.gif`, marts FAQ). Open from
+   Milestone 10: ADRs 1–7 in docs/adr, finish docs/source-assessment.md, a Dagster asset graph
+   screenshot. The demo GIF shows no real names: officer and owner names are pixelated (ffmpeg,
+   fixed boxes per scene); re-check any new recording the same way.
 1. Read PLAN.md Milestone 10. README: problem, architecture diagram, screenshots (frontend,
    Dagster asset graph), run in under 5 commands, design decisions. Screenshots must not show
    real person names: use synthetic data (the dbt fixtures or a demo company) or blur them;
@@ -411,3 +414,4 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | The overview's region chart was replaced by top legal forms: `region_code` is a VZD code without names in our data |
 | 2026-11-01 | `web/openapi.json` is the committed API contract; a Java test keeps it current, types are generated from it |
 | 2026-11-01 | Search at about 15 s in the frontend: measured (docs/search-performance.md), fixes planned in ROADMAP.md section 7; no code change yet |
+| 2026-11-01 | Demo GIF: real person names pixelated before committing (CLAUDE.md screenshot rule; public register data, but data minimisation and the CJEU 2022 ruling on beneficial-owner access). The unblurred upload on `main` (`lv-register-demo.gif`) is still there: owner decides whether to remove it (stays in git history unless main is rewritten) |
