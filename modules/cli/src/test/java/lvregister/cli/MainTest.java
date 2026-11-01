@@ -23,7 +23,10 @@ class MainTest {
     private static Steps recording(List<String> calls) {
         Map<StepName, Step> steps = new EnumMap<>(StepName.class);
         for (StepName name : StepName.values()) {
-            steps.put(name, date -> calls.add(name.cliName() + "@" + date));
+            steps.put(name, date -> {
+                calls.add(name.cliName() + "@" + date);
+                return StepOutcome.none();
+            });
         }
         return new Steps(steps);
     }
@@ -89,6 +92,6 @@ class MainTest {
     @Test
     void stepsRequireAnImplementationForEveryStep() {
         org.assertj.core.api.Assertions.assertThatIllegalArgumentException()
-                .isThrownBy(() -> new Steps(Map.of(StepName.DOWNLOAD, (LocalDate d) -> { })));
+                .isThrownBy(() -> new Steps(Map.of(StepName.DOWNLOAD, (LocalDate d) -> StepOutcome.none())));
     }
 }

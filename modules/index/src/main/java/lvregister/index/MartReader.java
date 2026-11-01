@@ -48,6 +48,15 @@ public final class MartReader {
                 new java.util.TreeMap<>(Map.of(MASS_ADDRESSES, addresses))));
     }
 
+    /** Rows of {@code dim_companies}, or empty when dbt has not built it yet. */
+    public Optional<Long> companies() throws IOException, SQLException {
+        String file = "dim_companies.parquet";
+        if (!marts.exists(file)) {
+            return Optional.empty();
+        }
+        return db.queryString("SELECT count(*) FROM " + parquet(file)).map(Long::parseLong);
+    }
+
     private List<StatView> stats(String stat, String file, List<String> dimensions, String value) throws SQLException {
         String select = dimensions.stream().map(d -> "coalesce(cast(" + DuckDb.identifier(d) + " AS VARCHAR), '') AS " + DuckDb.identifier(d))
                 .reduce((a, b) -> a + ", " + b).orElseThrow();

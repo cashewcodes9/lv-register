@@ -40,7 +40,7 @@ class JsonLoggingTest {
     void stepLogLinesAreJsonWithRunContext() {
         Map<StepName, Step> steps = new EnumMap<>(StepName.class);
         for (StepName name : StepName.values()) {
-            steps.put(name, date -> { });
+            steps.put(name, date -> StepOutcome.none());
         }
         RunContext context = new RunContext("run-42", Optional.of("dagster-7"));
 

@@ -8,11 +8,17 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.OutputStreamAppender;
 import ch.qos.logback.core.read.ListAppender;
 import com.sun.net.httpserver.HttpServer;
+import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +27,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lvregister.diff.SyntheticCaptures;
 import lvregister.ingest.SourceFile;
+import lvregister.pipes.PipesParams;
+import lvregister.pipes.PipesSession;
 import lvregister.serving.postgres.PostgresServing;
 import lvregister.serving.postgres.PostgresSettings;
 import lvregister.storage.S3ObjectStore;
@@ -35,8 +43,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * The CLI end to end on synthetic data: download → lake → diff → quality → index for two
- * captures, against SeaweedFS, PostgreSQL and a fake data.gov.lv. Then the log output (as the
+ * captures, against SeaweedFS, PostgreSQL and a fake data.gov.lv. The second capture runs as
+ * Dagster would: one step per process under Pipes, plus prune. Then the log output (as the JSON
+ * encoder writes it) and the Pipes messages (Dagster metadata) must not contain any person data
+ * (PLAN.md section 12).
  * JSON encoder writes it) must not contain any person data (PLAN.md section 12).
  */
 class PipelineLogsTest {
@@ -97,14 +107,16 @@ class PipelineLogsTest {
                 "LV_WORK_DIR", tmp.resolve("work").toString(), "DUCKDB_MEMORY_LIMIT", "256MB",
                 "DUCKDB_TEMP_DIRECTORY", tmp.resolve("duckdb").toString()));
         env.putAll(Map.of("SERVING_JDBC_URL", postgres.getJdbcUrl(), "SERVING_DB_USER", postgres.getUsername(),
-                "SERVING_DB_PASSWORD", postgres.getPassword()));
+                "SERVING_DB_PASSWORD", postgres.getPassword(), "RAW_KEEP", "1"));
         try (S3Client client = S3ObjectStore.client(s3)) {
             for (String bucket : List.of("raw-", "lake-", "marts-")) {
                 SeaweedFs.createBucket(client, bucket + suffix);
             }
         }
         RunContext context = new RunContext("e2e-run", Optional.empty());
-        Steps steps = Wiring.production(env, context);
+        DayClock clock = new DayClock(D1);
+        Steps steps = Wiring.production(env, context, clock);
+        ByteArrayOutputStream pipes = new ByteArrayOutputStream();
         List<String> logs = captureLogs(() -> {
             serve(SyntheticCaptures.files(SyntheticCaptures.COMPANY_A + SyntheticCaptures.COMPANY_B,
                     SyntheticCaptures.OFFICER_A + SyntheticCaptures.OFFICER_B));
@@ -114,8 +126,14 @@ class PipelineLogsTest {
             serve(SyntheticCaptures.files(SyntheticCaptures.COMPANY_A.replace("Alfa", "Alfa Plus") + SyntheticCaptures.COMPANY_B,
                     SyntheticCaptures.OFFICER_A
                             + "o3;40003000001;NATURAL_PERSON;CHAIR_OF_BOARD;EXECUTIVE_BOARD;Other Person;020202-*****;;;2026-11-03\n"));
-            for (String step : List.of("download", "lake", "diff", "quality", "index")) {
-                assertThat(Main.newCommandLine(steps, context).execute(step, "--date", D2.toString())).as(step).isZero();
+            clock.day = D2;
+            Map<String, String> assets = Map.of("download", "ur_raw_files", "lake", "lake_snapshot", "diff", "company_events",
+                    "quality", "quality_report", "index", "search_index", "prune", "retention");
+            for (String step : List.of("download", "lake", "diff", "quality", "index", "prune")) {
+                try (PipesSession session = pipesSession(assets.get(step), pipes)) {
+                    assertThat(Main.newCommandLine(steps, context, Optional.of(session)).execute(step, "--date", D2.toString()))
+                            .as(step).isZero();
+                }
             }
         });
 
@@ -127,12 +145,56 @@ class PipelineLogsTest {
             assertThat(serving.search("alfa plus", 0, 5).items()).isNotEmpty();
         }
         assertThat(logs).isNotEmpty().anySatisfy(l -> assertThat(l).contains("\"step\":\"index\"", "\"run_id\":\"e2e-run\""));
+        List<String> messages = pipes.toString(StandardCharsets.UTF_8).lines().toList();
+        assertThat(messages).filteredOn(m -> m.contains("report_asset_materialization")).hasSize(6);
+        assertThat(messages).filteredOn(m -> m.contains("report_asset_check")).hasSize(13);
+        // The synthetic data has one orphan role and a grown officers file: two WARN checks fail.
+        assertThat(messages).filteredOn(m -> m.contains("\"passed\":false")).hasSize(2)
+                .allSatisfy(m -> assertThat(m).contains("\"severity\":\"WARN\""))
+                .anySatisfy(m -> assertThat(m).contains("\"check_name\":\"size_change\""))
+                .anySatisfy(m -> assertThat(m).contains("\"check_name\":\"orphan_roles\""));
+        assertThat(messages).anySatisfy(m -> assertThat(m).contains("\"raw_pruned\":{\"raw_value\":[\"2026-11-02\"]"));
+        List<String> output = new java.util.ArrayList<>(logs);
+        output.addAll(messages);
         List<String> forbidden = new java.util.ArrayList<>(SyntheticCaptures.PERSON_NAMES);
         forbidden.addAll(MASKED_CODES);
-        for (String line : logs) {
+        for (String line : output) {
             for (String word : forbidden) {
-                assertThat(line).as("log line must not contain person data").doesNotContain(word);
+                assertThat(line).as("logs and Dagster metadata must not contain person data").doesNotContain(word);
             }
+        }
+    }
+
+    /** A Pipes session for one asset, as PipesDockerClient sets it up; messages go to {@code out}. */
+    private static PipesSession pipesSession(String asset, ByteArrayOutputStream out) {
+        String context = PipesParams.encode(Map.of("data", Map.of("asset_keys", List.of(asset), "partition_key", D2.toString(),
+                "run_id", "dagster-e2e")));
+        return PipesSession.open(Map.of(PipesSession.CONTEXT_ENV, context,
+                        PipesSession.MESSAGES_ENV, PipesParams.encode(Map.of("stdio", "stderr"))),
+                System.out, new PrintStream(out, true, StandardCharsets.UTF_8)).orElseThrow();
+    }
+
+    /** A clock at 07:00 Riga time of the capture day, so download accepts the capture date. */
+    private static final class DayClock extends Clock {
+        LocalDate day;
+
+        DayClock(LocalDate day) {
+            this.day = day;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Instant instant() {
+            return day.atTime(5, 0).toInstant(ZoneOffset.UTC);
         }
     }
 
