@@ -165,6 +165,15 @@ public abstract class ServingContract {
     }
 
     @Test
+    void searchFollowsTheLatestName() {
+        writer().upsertCompanies(Stream.of(company("40003000001", "SIA \"Vecais Vārds\"", D1)));
+        writer().upsertCompanies(Stream.of(company("40003000001", "SIA \"Jaunais Nosaukums\"", D2)));
+
+        assertThat(queries().search("jaunais nosaukums", 0, 5).items()).extracting(SearchHit::regNumber).containsExactly("40003000001");
+        assertThat(queries().search("vecais vards", 0, 5).items()).isEmpty();
+    }
+
+    @Test
     void searchPagesAndCounts() {
         searchFixture();
 

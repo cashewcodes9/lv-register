@@ -410,15 +410,23 @@ with HikariCP; schema in Flyway migrations (`db/migration/serving`, history tabl
 | `companies` | registration number | search, company page: the `CompanyView` document as `jsonb`, plus `name_search`, status, legal family, `as_of`, `doc_hash` |
 | `events` | event id | timelines, changes feed; payload as `json` (keeps the canonical text); indexes on registration number + date and on date + type |
 | `runs` | run id | pipeline page; the quality report as `json` |
+| `party_roles` | party key + registration number + role | the company network: which companies a person (`person:<key>`) or entity (`company:<reg>`) holds roles in; derived from `companies.doc` by a trigger (V3) |
+| `company_search` | registration number | search: a narrow copy of name, unaccented name, legal form and status with the GIN trigram index, kept by a trigger (V4) |
 | `stats` | aggregate name + key | overview page (Milestone 6) |
 | `features` | feature name + key | insights page (Milestone 6) |
 
 Search: extensions `pg_trgm` and `unaccent`; a generated, unaccented, lower-case name column
 (through an `IMMUTABLE` wrapper function, because `unaccent()` itself is only `STABLE`)
-with a GIN trigram index. Matches are a registration number, a substring (`LIKE`, wildcards in
+with a GIN trigram index on the narrow `company_search` table. Matches are a registration number, a substring (`LIKE`, wildcards in
 the query escaped) or trigram similarity; ranked by similarity, an exact registration number
-first. "riga udens" finds `SIA "Rīgas ūdens"`; on the real register a cold query takes about
-1.5 s on the dev VM (the API adds a cache in Milestone 8).
+first. "riga udens" finds `SIA "Rīgas ūdens"`. Search first ran on `companies` itself: its
+heap holds every document (501 MB), and a common word ("nams", 1,901 hits) read about 8,600
+random heap blocks, 6 s cold on the dev VM. `company_search` is about 60 MB and stays in
+memory. A query whose substring matches more than 1,000 names (a common word such as
+"sabiedriba", 193,000 names) is "broad": it returns the substring matches only, ranked exact
+name, prefix, then shorter names, without trigram similarity over every match. Measured on the
+real register through the API: typical queries 0.03–0.4 s, the commonest word about 2.8 s
+(6 s before), and the API caches results for 10 minutes (Caffeine).
 
 Loads are upserts. A company row is only written when its content hash (the document without
 `as_of`) changed and the incoming capture is not older (`as_of`), so re-indexing a capture

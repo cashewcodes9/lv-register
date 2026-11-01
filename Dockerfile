@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for the Java images (PLAN.md section 6.1).
-# Stages: jdk (Gradle build) -> cli. The `web` and `api` stages join in Milestones 8 and 9.
+# Stages: jdk (Gradle build) -> cli and api. The `web` stage joins in Milestone 9.
 
 FROM eclipse-temurin:25.0.5_8-jdk-noble AS jdk
 WORKDIR /src
@@ -9,7 +9,7 @@ COPY gradle/ gradle/
 COPY buildSrc/ buildSrc/
 COPY modules/ modules/
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew --no-daemon :cli:installDist
+    ./gradlew --no-daemon :cli:installDist :api:bootJar
 
 # DuckDB's httpfs extension, pre-installed so the lake step needs no extension download at
 # run time. Must match the DuckDB JDBC version (1.4.5).
@@ -32,3 +32,12 @@ USER lvregister
 WORKDIR /tmp
 ENTRYPOINT ["/opt/lv-register/bin/lv-register"]
 CMD ["--help"]
+
+# The read API (Spring Boot). Production target; serves web/dist from Milestone 9 on.
+FROM eclipse-temurin:25.0.5_8-jre-noble AS api
+RUN useradd --system --uid 10001 --no-create-home lvregister
+COPY --from=jdk /src/modules/api/build/libs/api-0.1.0-SNAPSHOT.jar /opt/lv-register/api.jar
+USER lvregister
+WORKDIR /tmp
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /opt/lv-register/api.jar"]
