@@ -16,7 +16,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 3. Storage + ingest + lake + normalize | done 2026-10-31, merged into `dev` (PR #1, CI green) |
 | 4. Diff + events | code merged into `dev` 2026-11-01 (PR #2, CI green); open: a capture a few days later, spot-check 5 events |
 | 5. Quality + index | done 2026-11-01, merged into `dev` (PR #3, CI green) |
-| 6. dbt | done 2026-11-01 on `milestone/6-dbt`, PR into `dev` |
+| 6. dbt | done 2026-11-01, merged into `dev` (PR #4, CI green) |
 | 7–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
