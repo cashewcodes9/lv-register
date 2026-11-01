@@ -14,6 +14,10 @@ jackson = "3.2.4"
 duckdb = "1.4.5.0"
 testcontainers = "2.0.5"
 jqwik = "1.10.2"
+spring-boot = "4.1.2"
+springdoc = "3.2.0"
+bucket4j = "8.21.0"
+caffeine = "3.3.1"
 
 [libraries]
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
@@ -38,3 +42,17 @@ duckdb-jdbc = { module = "org.duckdb:duckdb_jdbc", version.ref = "duckdb" }
 testcontainers = { module = "org.testcontainers:testcontainers", version.ref = "testcontainers" }
 jqwik = { module = "net.jqwik:jqwik", version.ref = "jqwik" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql", version.ref = "testcontainers" }
+# Spring Boot 4 (api module only). The BOM is a plain Gradle platform: where it pins an older
+# version than the catalog (Jackson, Flyway, HikariCP, JUnit), the catalog's newer one wins.
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
+spring-boot-starter-cache = { module = "org.springframework.boot:spring-boot-starter-cache" }
+spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+springdoc-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
+bucket4j = { module = "com.bucket4j:bucket4j_jdk17-core", version.ref = "bucket4j" }
+caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
