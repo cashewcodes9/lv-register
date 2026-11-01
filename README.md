@@ -7,10 +7,14 @@ read-only API and a React app to explore and check the data.
 Latvia is the Baltic country North Data does not cover yet. The register publishes its data
 on [data.gov.lv](https://data.gov.lv/dati/lv/organization/ur) under CC0, updated daily.
 
-**Status:** planning. Nothing runs yet.
+**Status:** Milestones 1–5 done: the Java pipeline (download → lake → diff → quality → index)
+runs on real weekly captures into PostgreSQL. dbt, Dagster, the API and the frontend come next.
 
 - [PLAN.md](PLAN.md): goal, scope, tech stack and milestones
 - [docs/architecture.md](docs/architecture.md): layers, pipeline, event rules, modules
+- [docs/FAQ.md](docs/FAQ.md): why the project is built this way (serving store, dbt, Dagster,
+  marts, storage, capture dates)
+- [docs/source-assessment.md](docs/source-assessment.md): what the UR files really contain
 - [ROADMAP.md](ROADMAP.md): after the MVP, starting with observability and monitoring
 - Reference design: [Oversee](https://github.com/cashewcodes9/Oversee), the same layer
   design in Python

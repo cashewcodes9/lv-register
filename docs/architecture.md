@@ -8,7 +8,8 @@ and tests the data in SQL.
 It follows the layer design of [Oversee](https://github.com/cashewcodes9/Oversee): raw cache,
 S3 lake, cleaning with drop counts, dbt, Dagster assets. The domain logic is in Java 25.
 Scope and milestones are in [PLAN.md](../PLAN.md). Column names and value sets come from
-[source-assessment.md](source-assessment.md) (Milestone 1), not from this document.
+[source-assessment.md](source-assessment.md) (Milestone 1), not from this document. Why the
+stack looks like this (serving store, dbt, Dagster, marts) is answered in [FAQ.md](FAQ.md).
 
 ## Layers
 
@@ -197,6 +198,8 @@ false merge of two people is worse than a missed match.
 
 ## Transformation with dbt
 
+What dbt adds and what marts are: [FAQ](FAQ.md#what-does-dbt-add), [marts](FAQ.md#what-are-marts).
+
 `transform/` is a dbt project on **dbt-duckdb**. DuckDB reads the lake and events straight
 from S3, so there is no warehouse database to load. Marts are written back to S3 as Parquet
 (external materialization); the DuckDB database file only holds views and build state.
@@ -230,6 +233,8 @@ at the products that use the data. dbt sources carry `meta.dagster.asset_key`, s
 draws one graph from the download to the marts.
 
 ## Orchestration with Dagster
+
+What Dagster adds, and its cost: [FAQ](FAQ.md#what-does-dagster-add).
 
 `orchestration/` is a small Python project: Dagster definitions plus pytest tests. Dagster
 runs as three always-on services, with Postgres for its run and event storage:
@@ -312,6 +317,8 @@ never person names or keys. A test runs the CLI on a fixture and scans its log o
 Dagster, SeaweedFS and PostgreSQL listen on localhost only.
 
 ## Serving
+
+Why PostgreSQL and not Elasticsearch: [FAQ](FAQ.md#why-postgresql-for-serving-and-not-elasticsearch).
 
 The serving store sits behind a port, so the backend can be swapped without touching the
 pipeline or the API:
