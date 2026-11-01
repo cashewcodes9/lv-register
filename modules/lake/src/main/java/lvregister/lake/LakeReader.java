@@ -33,6 +33,16 @@ public final class LakeReader {
         this.lake = lake;
     }
 
+    /** The column names of a file of a capture, in file order. */
+    public List<String> columns(SourceFile file, LocalDate captureDate) throws IOException, SQLException {
+        String key = LakeLayout.parquetKey(file, captureDate);
+        if (!lake.exists(key)) {
+            throw new IllegalStateException("not in the lake: " + key);
+        }
+        return db.queryRows("DESCRIBE SELECT * FROM read_parquet(" + DuckDb.literal(lake.location(key))
+                + ", hive_partitioning = false)").stream().map(row -> row.get("column_name")).toList();
+    }
+
     public Stream<Map<String, String>> rows(SourceFile file, LocalDate captureDate, List<String> columns)
             throws IOException, SQLException {
         String key = LakeLayout.parquetKey(file, captureDate);

@@ -1,7 +1,8 @@
 # Services and profiles from PLAN.md section 6.1.
-#   core   long-running stores: lake (SeaweedFS S3), postgres. `api` joins in Milestone 8.
-#   tools  one-shot containers started with `docker compose run`: build, cli, duckdb.
-# The orchestration (Dagster) and dev (web-dev) profiles join in later milestones.
+#   core           long-running stores: lake (SeaweedFS S3), postgres. `api` joins in Milestone 8.
+#   orchestration  Dagster: dagster-code, dagster-webserver (:3000), dagster-daemon.
+#   tools          one-shot containers started with `docker compose run`: build, cli, dbt, duckdb.
+# The dev profile (web-dev) joins in Milestone 9.
 name: lv-register
 
 x-env: &env
@@ -128,16 +129,19 @@ services:
       postgres:
         condition: service_healthy
 
-  # dbt over the lake (Milestone 6); the same image gets Dagster in Milestone 7.
+  # dbt over the lake (Milestone 6), with ./transform mounted for development. The image also
+  # holds Dagster and a copy of the dbt project for the orchestration services.
   dbt:
     profiles: ["tools"]
-    build:
-      context: orchestration
+    build: &orchestration-build
+      context: .
+      dockerfile: orchestration/Dockerfile
       args:
         HOST_UID: ${HOST_UID:-1000}
         HOST_GID: ${HOST_GID:-1000}
     image: lv-register/orchestration:dev
     <<: *env
+    entrypoint: ["dbt"]
     environment:
       DBT_TARGET: ${DBT_TARGET:-lake}
       DBT_PROFILES_DIR: /work/transform
@@ -155,6 +159,106 @@ services:
     depends_on:
       lake-init:
         condition: service_completed_successfully
+
+  # Dagster (Milestone 7): code server, UI and daemon from the orchestration image, storage in
+  # the `dagster` database. Runs execute in dagster-code, which starts the cli containers of
+  # the Java steps through the Docker socket (Dagster Pipes).
+  dagster-code:
+    profiles: ["orchestration"]
+    build: *orchestration-build
+    image: lv-register/orchestration:dev
+    <<: *env
+    command: ["dagster", "api", "grpc", "-h", "0.0.0.0", "-p", "4000", "-m", "lvregister_orchestration.definitions"]
+    environment: &dagster-env
+      DAGSTER_DB_PASSWORD: ${DAGSTER_DB_PASSWORD:-dagster-local-only}
+      DAGSTER_RUN_RETENTION_DAYS: ${DAGSTER_RUN_RETENTION_DAYS:-90}
+      LV_CAPTURE_CRON: ${LV_CAPTURE_CRON:-0 6 * * 1}
+      LV_ALERT_WEBHOOK_URL: ${LV_ALERT_WEBHOOK_URL:-}
+      LV_CLI_IMAGE: lv-register/cli:dev
+      LV_DOCKER_NETWORK: lv-register_default
+      CLI_JAVA_OPTS: ${CLI_JAVA_OPTS:--Xmx2g -XX:+UseSerialGC}
+      # Passed on to the cli containers (FORWARDED_ENV in java_assets.py); dbt reads them too.
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://lake:8333}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lvdev}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lvdev-local-only-secret}
+      S3_BUCKET_RAW: ${S3_BUCKET_RAW:-lv-raw}
+      S3_BUCKET_LAKE: ${S3_BUCKET_LAKE:-lv-lake}
+      S3_BUCKET_MARTS: ${S3_BUCKET_MARTS:-lv-marts}
+      SERVING_BACKEND: ${SERVING_BACKEND:-postgres}
+      SERVING_JDBC_URL: ${SERVING_JDBC_URL:-jdbc:postgresql://postgres:5432/lv_serving}
+      SERVING_DB_USER: ${SERVING_DB_USER:-lv_serving}
+      SERVING_DB_PASSWORD: ${SERVING_DB_PASSWORD:-lv-serving-local-only}
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
+      DBT_TARGET: lake
+      DBT_TARGET_PATH: /tmp/dbt/target
+      DBT_LOG_PATH: /tmp/dbt/logs
+      LV_LAKE_ROOT: s3://${S3_BUCKET_LAKE:-lv-lake}
+    volumes:
+      - dagster-storage:/opt/dagster/storage
+      - ./docker/dagster/dagster.yaml:/opt/dagster/home/dagster.yaml:ro
+      - ./docker/dagster/workspace.yaml:/opt/dagster/home/workspace.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-0}"
+    healthcheck:
+      # Also checks the Docker socket: without it (DOCKER_GID unset, i.e. not started with make)
+      # every Java step would fail with "Permission denied".
+      test: ["CMD-SHELL", "dagster api grpc-health-check -p 4000 && python -c \"import docker; docker.from_env().ping()\""]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      lake-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  dagster-webserver:
+    profiles: ["orchestration"]
+    image: lv-register/orchestration:dev
+    command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "/opt/dagster/home/workspace.yaml"]
+    environment:
+      DAGSTER_DB_PASSWORD: ${DAGSTER_DB_PASSWORD:-dagster-local-only}
+    volumes:
+      - dagster-storage:/opt/dagster/storage
+      - ./docker/dagster/dagster.yaml:/opt/dagster/home/dagster.yaml:ro
+      - ./docker/dagster/workspace.yaml:/opt/dagster/home/workspace.yaml:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3000/server_info', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      dagster-code:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dagster-daemon:
+    profiles: ["orchestration"]
+    image: lv-register/orchestration:dev
+    command: ["dagster-daemon", "run", "-w", "/opt/dagster/home/workspace.yaml"]
+    environment:
+      DAGSTER_DB_PASSWORD: ${DAGSTER_DB_PASSWORD:-dagster-local-only}
+    volumes:
+      - dagster-storage:/opt/dagster/storage
+      - ./docker/dagster/dagster.yaml:/opt/dagster/home/dagster.yaml:ro
+      - ./docker/dagster/workspace.yaml:/opt/dagster/home/workspace.yaml:ro
+    healthcheck:
+      test: ["CMD", "dagster-daemon", "liveness-check"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 90s
+    depends_on:
+      dagster-code:
+        condition: service_healthy
+    restart: unless-stopped
 
   duckdb:
     profiles: ["tools"]
@@ -174,3 +278,4 @@ volumes:
   lake-data:
   pg-data:
   gradle-cache:
+  dagster-storage:

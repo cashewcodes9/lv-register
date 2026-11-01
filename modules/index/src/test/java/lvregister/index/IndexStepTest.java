@@ -165,6 +165,9 @@ class IndexStepTest {
                 + DuckDb.literal(marts.location("feat_mass_registration_addresses.parquet")) + " (FORMAT parquet)");
 
         new IndexStep(lake, loader, writer, new MartReader(db, marts)).run(D1);
+        assertThat(new MartReader(db, marts).companies()).isEmpty();
+        db.execute("COPY (SELECT '40003000001' AS reg_number) TO " + DuckDb.literal(marts.location("dim_companies.parquet")) + " (FORMAT parquet)");
+        assertThat(new MartReader(db, marts).companies()).contains(1L);
 
         assertThat(writer.calls).containsExactly("prepare", "companies", "events", "stats:companies_by_form_status_region",
                 "stats:events_per_capture", "feature:mass_registration_addresses", "run");

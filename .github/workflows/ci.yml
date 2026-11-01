@@ -19,3 +19,5 @@ jobs:
         run: docker build --target cli -t lv-register/cli:ci .
       - name: dbt build on the committed fixtures (orchestration image)
         run: make dbt-fixtures
+      - name: Dagster definitions, asset graph and checks (pytest, orchestration image)
+        run: make dagster-test

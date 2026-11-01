@@ -1,0 +1,62 @@
+# Dagster instance (DAGSTER_HOME) shared by dagster-webserver, dagster-daemon and dagster-code.
+# Run, event log and schedule storage in the `dagster` database of the postgres service.
+storage:
+  postgres:
+    postgres_db:
+      hostname: postgres
+      port: 5432
+      # SQLAlchemy 2.1 defaults to psycopg 3; dagster-postgres ships psycopg2.
+      scheme: postgresql+psycopg2
+      db_name: dagster
+      username: dagster
+      password:
+        env: DAGSTER_DB_PASSWORD
+
+# One run at a time: the VM has 1 CPU and 3.8 GB, and a capture's steps must not overlap.
+run_coordinator:
+  module: dagster.core.run_coordinator
+  class: QueuedRunCoordinator
+  config:
+    max_concurrent_runs: 1
+
+# Runs execute in the code server container (dagster-code), which starts the cli containers.
+run_launcher:
+  module: dagster.core.launcher
+  class: DefaultRunLauncher
+
+# Compute logs and local artifacts on the volume the three services share.
+compute_logs:
+  module: dagster.core.storage.local_compute_log_manager
+  class: LocalComputeLogManager
+  config:
+    base_dir: /opt/dagster/storage/logs
+
+local_artifact_storage:
+  module: dagster.core.storage.root
+  class: LocalArtifactStorage
+  config:
+    base_dir: /opt/dagster/storage
+
+# Schedule and sensor ticks; runs older than 90 days go through the dagster_housekeeping job.
+retention:
+  schedule:
+    purge_after_days: 90
+  sensor:
+    purge_after_days:
+      skipped: 7
+      failure: 90
+      success: 30
+
+telemetry:
+  enabled: false
+
+# Freshness policies (ur_raw_files: a capture at least every 8 days).
+freshness:
+  enabled: true
+
+# Marks runs whose worker died (for example when dagster-code is recreated) as failed or
+# canceled, so they do not hold the single run slot.
+run_monitoring:
+  enabled: true
+  start_timeout_seconds: 300
+  cancel_timeout_seconds: 180

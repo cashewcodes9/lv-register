@@ -3,7 +3,9 @@ package lvregister.cli;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
+import lvregister.pipes.PipesSession;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -25,13 +27,24 @@ public final class Main {
 
     public static void main(String[] args) {
         RunContext context = RunContext.fromEnvironment(System.getenv());
-        System.exit(newCommandLine(Wiring.production(System.getenv(), context), context)
-                .execute(args));
+        Optional<PipesSession> pipes = PipesSession.open(System.getenv(), System.out, System.err);
+        int exit;
+        try {
+            exit = newCommandLine(Wiring.production(System.getenv(), context), context, pipes).execute(args);
+        } finally {
+            pipes.ifPresent(PipesSession::close);
+        }
+        System.exit(exit);
     }
 
-    /** Builds the command line with the given wiring; used by {@link #main} and by tests. */
+    /** Builds the command line with the given wiring, without Dagster Pipes; used by tests. */
     public static CommandLine newCommandLine(Steps steps, RunContext context) {
-        StepRunner runner = new StepRunner(steps, context);
+        return newCommandLine(steps, context, Optional.empty());
+    }
+
+    /** Builds the command line with the given wiring; steps report to {@code pipes} when present. */
+    public static CommandLine newCommandLine(Steps steps, RunContext context, Optional<PipesSession> pipes) {
+        StepRunner runner = new StepRunner(steps, context, pipes);
         CommandLine.IFactory factory = new CommandLine.IFactory() {
             @Override
             public <K> K create(Class<K> cls) throws Exception {
@@ -82,7 +95,7 @@ public final class Main {
         @Override List<StepName> steps() { return List.of(StepName.QUALITY); }
     }
 
-    @Command(name = "index", description = "Upsert companies, events and runs into Elasticsearch.")
+    @Command(name = "index", description = "Upsert companies, events, runs and marts into the serving store.")
     static final class Index extends StepCommand {
         @Override List<StepName> steps() { return List.of(StepName.INDEX); }
     }

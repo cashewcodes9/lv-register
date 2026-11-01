@@ -68,7 +68,8 @@ Each step reads objects and writes objects for one capture, so it can run alone.
    once), compute sha256 while streaming, write to a temporary key, then copy into place. The
    manifest `date=D/manifest.json` records file, URL, sha256, size, fetch time and the CKAN
    `last_modified`. A file already in the capture's manifest is not downloaded again: a
-   capture is fixed once written.
+   capture is fixed once written. Only today's capture (Riga date) is fetched; for a past date
+   the step succeeds without fetching if the manifest is complete, and fails otherwise.
 2. **lake** (`lake`): DuckDB JDBC reads each raw CSV through `httpfs` (`read_csv`, `;`, all
    columns VARCHAR, no Hive columns) and writes Parquet (ZSTD) with source file, sha256, size
    and capture date in the key-value metadata. DuckDB writes to a local work file, which is
@@ -102,6 +103,10 @@ Each step reads objects and writes objects for one capture, so it can run alone.
    the drop share.
 6. **index** (`index`): upsert companies, events, the run report, and the stats and feature
    marts into the serving store through `ServingWriter`.
+7. **prune** (`quality`, `PruneStep`): bounded retention (see Captures, retention and on/off).
+
+Every step returns its metadata and check results; under Dagster Pipes the CLI reports them
+(see Orchestration).
 
 dbt runs between `quality` and `index` (see Orchestration).
 
@@ -164,11 +169,11 @@ ingest  lake  normalize  diff  quality  index  pipes  serving-postgres   api (Sp
 | `lake` | DuckDB JDBC session (httpfs), CSV → Parquet writer, row reader, `SnapshotLoader` | `domain`, `storage`, `ingest` (manifest, file list), `normalize` |
 | `normalize` | row → record functions, legal form and status mapping, person keys, snapshot assembly | `domain` |
 | `diff` | `SnapshotDiff` (pure), canonical event JSON, event ids, the diff step (I/O) | `domain`, `lake` (snapshot loading), `storage` |
-| `quality` | run record and quality report (`ReportBuilder` pure, `QualityStep` I/O) | `domain`, `lake`, `diff` |
+| `quality` | run record and quality report (`ReportBuilder` pure, `QualityStep` I/O), asset checks (`Checks`, pure), retention (`PruneStep`) | `domain`, `lake`, `diff` |
 | `index` | index step: loads the snapshot, events and report of a capture, writes through `ServingWriter` only | `domain`, `serving`, `lake`, `diff`, `quality` |
 | `serving` | port: `ServingWriter`, `ServingQueries`, read records; abstract contract test suite (test fixtures) | `domain` |
 | `serving-postgres` | adapter: plain JDBC + HikariCP, Flyway migrations, `pg_trgm` + `unaccent` search | `domain`, `serving` |
-| `pipes` | Dagster Pipes messages (materializations, metadata, check results) | `domain` |
+| `pipes` | Dagster Pipes protocol 0.1: reads the injected context, writes materialization and check messages | Jackson only |
 | `cli` | one Picocli command per step; `Main` builds every object by hand | pipeline modules |
 | `api` | Spring Boot 4 controllers, DTO records, web config | `domain`, `serving` (adapter only in wiring config) |
 
@@ -256,47 +261,82 @@ The index step loads the small marts into the serving store as `stats`
 
 What Dagster adds, and its cost: [FAQ](FAQ.md#what-does-dagster-add).
 
-`orchestration/` is a small Python project: Dagster definitions plus pytest tests. Dagster
-runs as three always-on services, with Postgres for its run and event storage:
+`orchestration/lvregister_orchestration` is a small Python package: Dagster definitions, a few
+commands for the Makefile, and pytest tests. Dagster runs as three always-on services
+(profile `orchestration`), with its run and event storage in the `dagster` database:
 
 ```
 dagster-webserver (:3000 UI) ─┐
 dagster-daemon (schedules,    ├─► postgres (database `dagster`)
-  sensors, run queue)         │
-dagster-code (gRPC) ──────────┘
-     │ launches through the Docker socket
+  sensors, run queue,         │
+  freshness)                  │
+dagster-code (gRPC; runs      ┘
+  execute here)
+     │ PipesDockerClient through the Docker socket, network lv-register_default
      ▼
-cli container: lv-register <step> --date <partition>  ── Dagster Pipes messages ──► Dagster
+cli container: lv-register <step> --date <partition>
+     │ stdout: JSON logs (Dagster compute logs)
+     └ stderr: Pipes messages ─► materialization metadata + asset check results
 ```
 
-**Java through Pipes:** the Java steps run in the `cli` image, launched by dagster-docker's
-Pipes client. The `pipes` module in the CLI writes Dagster Pipes messages: materialization
-metadata (rows, sha256, URIs, dropped per rule) and asset check results. The Dagster code
-holds no pipeline logic. The official Java Pipes library is used if it fits; otherwise the
-module writes the small JSON message protocol itself.
+- **One run at a time, one step at a time:** `QueuedRunCoordinator` with
+  `max_concurrent_runs: 1` and the in-process executor. The heaviest step (`diff` or `index`,
+  about 2.2 GB) then runs next to Dagster (about 0.45 GB idle) without overlap.
+- **Config:** `docker/dagster/dagster.yaml` (instance) and `workspace.yaml` (the code location
+  `lv_register` on `dagster-code:4000`), mounted read-only into the three services. Compute logs
+  live on the `dagster-storage` volume they share.
+- **Image:** `orchestration/Dockerfile`, built from the repository root. It holds Python,
+  Dagster, dbt, the package, a copy of `transform/` and the dbt manifest from `dbt parse` at
+  build time. The `dbt` tool service uses the same image with `./transform` mounted.
 
-**Assets** (one partition per capture date; captures are weekly, see below):
+### Java through Pipes
 
-| Asset | Runs | Checks |
+The Java steps run in the `cli` image, launched by dagster-docker's `PipesDockerClient`. The
+`pipes` module implements Dagster Pipes protocol 0.1 itself (about 200 lines on the JDK and
+Jackson 3): it reads `DAGSTER_PIPES_CONTEXT` and `DAGSTER_PIPES_MESSAGES` (base64 of zlib of
+JSON) and writes one JSON line per message (`opened`, `report_asset_materialization`,
+`report_asset_check`, `closed`) to stderr. The official Java library was not used: its
+repository is archived as a prototype, and it pulls in Jackson 2 and the AWS SDK.
+
+Every step returns a `StepOutcome`: metadata (counts, sha256, URIs; never person data) and its
+check results. The checks are computed in Java (`lvregister.quality.Checks`), and the Dagster
+definitions declare the same names; a pytest compares the two lists. A failed blocking check is
+reported with severity ERROR, which stops the downstream assets. Without the Pipes variables
+(`make run`, a manual `docker compose run cli`) the CLI behaves as before. The cli container
+gets only the forwarded variables of `FORWARDED_ENV` in `java_assets.py`, and is removed after
+the step.
+
+### Assets
+
+One partition per capture actually made (`DynamicPartitionsDefinition` `captures`, keyed by
+the Riga date). Every asset uses it, with identity mappings; `diff` reads the previous capture
+from the lake itself, whatever its date.
+
+| Asset | Runs | Checks (blocking in bold) |
 |---|---|---|
-| `ur_raw_files` | `cli download`, retry with backoff | file count and sizes vs previous capture |
-| `lake_snapshot` | `cli lake` | schema unchanged vs source assessment (blocking) |
-| `company_events` | `cli diff`; reads the previous capture from the lake, whatever its date | event spike per type (blocking above a hard limit) |
-| `quality_report` | `cli quality` | drop share ≤ 1%, orphans and unmapped values not growing |
-| dbt models | `dbt build` via dagster-dbt, dbt tests as asset checks | all dbt tests |
-| `search_index` | `cli index` | document counts match the marts |
-| `retention` | `cli prune` | total storage below `STORAGE_WARN_GB` (warn) |
+| `ur_raw_files` | `cli download`, retry 3× with exponential backoff from 5 min; freshness policy: fails after 8 days without a capture | **`files_complete`**, `size_change` (vs previous capture) |
+| `lake_snapshot` | `cli lake` | **`schema_unchanged`** (no column of the previous capture missing) |
+| `company_events` | `cli diff` | **`event_spike`** (one event type above `QUALITY_EVENT_HARD_SHARE` of the companies) |
+| `quality_report` | `cli quality` | **`drop_share`**, **`register_not_empty`**, `orphan_roles`, `unmapped_values`, `row_change`, `duplicate_regcodes`, `event_volume` |
+| dbt models (group `dbt`) | `dbt build` via dagster-dbt; every staging model also depends on `quality_report` | the dbt tests; a failing test fails the step |
+| `search_index` | `cli index`; depends on the stats, feature and `dim_companies` marts | `counts_match_marts` (latest capture only) |
+| `retention` | `cli prune` | `storage_below_warn` (`STORAGE_WARN_GB`) |
 
-- **Jobs:** `capture_pipeline` (all assets for one capture); `rebuild_marts` (dbt only).
-- **Schedule:** `weekly_capture`, Mondays 06:00 Europe/Riga (configurable, set after Milestone
-  1). It adds the capture date as a new partition and runs `capture_pipeline`. `make
-  capture-now` does the same on demand.
-- **Freshness:** a freshness check on `ur_raw_files` turns red when no capture succeeded in 8
-  days while the schedule is on.
-- **Sensors:** run failure sensor logs the failure and posts to an optional webhook (`.env`).
-- **Reprocessing:** re-materializing a past capture reads from the lake. `ur_raw_files`
-  cannot be re-fetched for past dates; partitions only exist for captures actually made.
-- **Blocking checks** stop downstream assets, so a broken file never reaches the serving store.
+- **Jobs:** `capture_pipeline` (all assets of one capture), `reprocess_capture` (from
+  `company_events` on: reads only the lake), `rebuild_marts` (dbt only), `dagster_housekeeping`
+  (deletes runs older than `DAGSTER_RUN_RETENTION_DAYS`, 90; OSS Dagster has no setting for
+  run retention, only for ticks).
+- **Schedules:** `weekly_capture`, Mondays 06:00 Europe/Riga (`LV_CAPTURE_CRON`). It adds the
+  capture date as a partition and queues `capture_pipeline`. `daily_housekeeping` at 03:30.
+  `make capture-now` does what the schedule does, at any time.
+- **Sensor:** `run_failure_alert` logs a failed run and posts it to `LV_ALERT_WEBHOOK_URL` when
+  set.
+- **Reprocessing:** a past capture can be re-materialized from the UI (or `make capture-now
+  DATE=...`). `download` never fetches a past date: with a complete manifest it succeeds
+  without fetching; otherwise it fails. `diff` refuses when the capture before it was pruned
+  from the lake, so events written earlier are never replaced by a diff across a longer gap.
+- **Existing captures:** `make dagster` runs `sync-partitions`, which adds a partition for
+  every raw manifest (captures made with `make run` or before Dagster).
 
 ## Captures, retention and on/off
 
@@ -313,8 +353,10 @@ make down / make up             all containers; data stays in volumes
 - **Diff across gaps:** a capture is compared with the previous capture in the lake. Each
   event carries both snapshot dates (`observedBetween`), and the report records the gap.
 - **Retention:** raw CSVs for the latest 2 captures, lake snapshots for the latest 12, events
-  and reports forever. `prune` never deletes the latest capture or a snapshot whose events are
-  missing.
+  and reports forever (`RAW_KEEP`, `LAKE_KEEP`). Raw manifests are kept too: they list every
+  capture ever made. `prune` never deletes the latest capture, raw CSVs the lake does not hold
+  yet, or a snapshot before its own events and those of the next capture (whose diff reads it)
+  are written.
 - **Restart policy:** `unless-stopped`, so a running stack survives a reboot and a stopped one
   stays stopped.
 

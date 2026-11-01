@@ -10,6 +10,8 @@ decision is written down. The plan is [PLAN.md](../PLAN.md), the design is
 - [What does dbt add?](#what-does-dbt-add)
 - [What does Dagster add?](#what-does-dagster-add)
 - [Are dbt and Dagster worth their cost here?](#are-dbt-and-dagster-worth-their-cost-here)
+- [Which Dagster version, and how does the Java CLI talk to Dagster?](#which-dagster-version-and-how-does-the-java-cli-talk-to-dagster)
+- [Does Dagster fit into the VM next to a capture?](#does-dagster-fit-into-the-vm-next-to-a-capture)
 - [What are marts?](#what-are-marts)
 - [Why SeaweedFS, and why the AWS SDK if nothing runs on AWS?](#why-seaweedfs-and-why-the-aws-sdk-if-nothing-runs-on-aws)
 - [Why weekly captures, and how are captures dated?](#why-weekly-captures-and-how-are-captures-dated)
@@ -104,6 +106,55 @@ and [PLAN.md Milestone 7](../PLAN.md#milestone-7-dagster-orchestration).
   tests, and an orchestrator with partitions, checks and backfills. dbt also delivers what
   the frontend needs (stats and feature marts) and the Java/SQL parity test. Dagster is kept
   lean: no extra services beyond the plan, and its storage in the existing PostgreSQL.
+
+## Which Dagster version, and how does the Java CLI talk to Dagster?
+
+**Version** (decided 2026-11-01): Dagster 1.13.28 with its integrations at 0.29.28
+(dagster-webserver, -postgres, -docker, -dbt, -pipes). They are released together, and they
+install cleanly next to dbt-core 1.12.6, dbt-duckdb 1.11.1 and duckdb 1.4.5 (`pip check`).
+dagster-dbt accepts `dbt-core >=1.7,<1.13`.
+
+**Talking to Dagster: Dagster Pipes.** Dagster starts the CLI in the `cli` image
+(`PipesDockerClient`) and passes two environment variables, `DAGSTER_PIPES_CONTEXT` and
+`DAGSTER_PIPES_MESSAGES`, each base64 of zlib of JSON. The CLI writes one JSON line per
+message to stderr (`opened`, `report_asset_materialization`, `report_asset_check`, `closed`),
+marked with `"__dagster_pipes_version": "0.1"`; Dagster reads the container logs and ignores
+every other line, so our JSON logs on stdout do not interfere.
+
+Three options were weighed:
+
+| Option | For | Against |
+|---|---|---|
+| **Own implementation in the `pipes` module** (chosen) | about 200 lines on the JDK and Jackson 3, which the project uses anyway; easy to test against values written by the Python library | we maintain it (the protocol is small and versioned) |
+| Official `io.dagster:pipes` 1.1.1 | exists on Maven Central | repository archived and labelled "prototype"; pulls in Jackson 2, the AWS S3 SDK and its own Picocli |
+| No Pipes | Java unchanged | Python would read `report.json` from S3 itself: checks and metadata less direct |
+
+The checks are computed in Java (`lvregister.quality.Checks`); the Dagster code only declares
+their names, and a pytest makes sure the two lists match. See
+[architecture.md, Java through Pipes](architecture.md#java-through-pipes).
+
+## Does Dagster fit into the VM next to a capture?
+
+Yes, because nothing runs in parallel. Measured on the VM (1 CPU, 3.8 GB RAM, 4 GB swap):
+
+| What | Memory |
+|---|---|
+| `lake` (SeaweedFS) | 0.2–0.36 GB |
+| `postgres` | 0.03 GB idle, up to 0.24 GB while indexing |
+| Dagster idle: webserver 130 MB, daemon 104 MB, code server 187 MB | 0.42 GB |
+| heaviest step: cli `diff` or `index` (two snapshots in the heap, `-Xmx2g`) | 2.2 GB |
+| dbt build (DuckDB) | 1.0 GB |
+
+The first full capture through Dagster (2026-11-01, about 25 minutes) used at most 2.96 GB of
+the 3.8 GB, in the `diff` step. Three guardrails keep it
+that way:
+
+1. **One run at a time:** `QueuedRunCoordinator` with `max_concurrent_runs: 1`.
+2. **One step at a time:** the in-process executor runs the steps of a run one after the other.
+3. **No heavy builds during a capture:** `make build` (Gradle, about 1.5 GB) should not run on
+   Monday morning at 06:00 Riga time.
+
+If memory gets tight, the lever is the `diff` step (two full snapshots), not Dagster.
 
 ## What are marts?
 

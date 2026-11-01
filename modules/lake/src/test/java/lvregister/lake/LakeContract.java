@@ -41,6 +41,14 @@ abstract class LakeContract {
     }
 
     @Test
+    void listsTheColumnsOfAFileInFileOrder() throws Exception {
+        RawCaptures.write(raw(), DAY, Map.of());
+        writer().run(DAY);
+
+        assertThat(new LakeReader(db(), lake()).columns(SourceFile.REGISTER, DAY)).startsWith("regcode").contains("name", "type");
+    }
+
+    @Test
     void keepsTheDialectQuirksAsText() throws Exception {
         RawCaptures.write(raw(), DAY, Map.of());
         writer().run(DAY);
