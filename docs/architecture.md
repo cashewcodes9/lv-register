@@ -427,6 +427,8 @@ memory. A query whose substring matches more than 1,000 names (a common word suc
 name, prefix, then shorter names, without trigram similarity over every match. Measured on the
 real register through the API: typical queries 0.03–0.4 s, the commonest word about 2.8 s
 (6 s before), and the API caches results for 10 minutes (Caffeine).
+Overlapping searches while typing are still slow (up to about 15 s); see
+[search-performance.md](search-performance.md) and ROADMAP.md section 7.
 
 Loads are upserts. A company row is only written when its content hash (the document without
 `as_of`) changed and the incoming capture is not older (`as_of`), so re-indexing a capture

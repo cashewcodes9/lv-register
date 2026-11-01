@@ -234,3 +234,44 @@ Plan:
       company's legal address; it may cover most companies without a code mapping
 - [ ] Check first: do the VZD codes in the published dataset match every `region` and `city`
       value in the register? Count the unmatched ones on a real capture
+
+## 7. Search performance
+
+A search took about 15 s in the frontend (2026-11-01). The measurements are in
+[docs/search-performance.md](docs/search-performance.md). The causes: overlapping searches
+that are never cancelled, the expensive page statement for broad queries, and a 1 CPU VM
+that is short on memory. This affects users now, so it can come before sections 1–6.
+
+Frontend:
+
+- [ ] Pass TanStack Query's `signal` to `api.GET` in `useSearch` (and the other hooks), so
+      superseded requests are aborted
+- [ ] Debounce 300 → 400 ms, and decide with the owner whether search starts at 3
+      characters instead of 2 (two-letter queries are the slowest: 2.5–4.5 s cold)
+
+API and SQL (`serving-postgres`; the `serving` contract tests must stay green):
+
+- [ ] Broad page: sort the substring matches, take the 20 rows, then compute similarity only
+      for those rows (measured 2.6–4 times faster: `ri` 2,024 → 774 ms, `sia` 1,018 → 251 ms)
+- [ ] Optionally cap the count at 1,001 and show "1,000+ matches" (the pager needs a total; the
+      `Page` contract would carry "at least")
+- [ ] `SET LOCAL statement_timeout` for search (e.g. 5 s), so an abandoned or runaway query
+      can't hold a connection and the CPU; the API answers with a ProblemDetail
+- [ ] Limit concurrent searches (a semaphore of 1–2 in the API, or a separate small pool)
+      so searches don't slow each other down on 1 CPU
+
+Machine:
+
+- [ ] `shared_buffers` 128 → 256 MB (`company_search` with its index is 121 MB), and check
+      swap again with Dagster idle
+- [ ] Re-measure with `max_parallel_workers_per_gather = 0`; no clear win on 1 CPU so far
+
+Measuring:
+
+- [ ] A repeatable benchmark in a container (`make bench-search`): the three statements per
+      query, median of 5, and API times sequential and overlapping; results go into
+      docs/search-performance.md
+- [ ] Log search duration and broad/fuzzy per request (no query text at INFO level);
+      the p95 latency dashboard and alert in section 1 cover the long term
+- [ ] Done when: typing `rigas udens` at normal speed on a cold cache shows results in under
+      1 s on the dev VM, and no single search takes more than 2 s

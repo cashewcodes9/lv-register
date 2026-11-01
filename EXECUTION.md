@@ -283,6 +283,8 @@ board member removed; 47404003378: farm owner removed).
    ask the owner.
 2. Milestone 4 leftovers: the 2026-11-09 capture (Dagster's schedule takes it if the stack is
    up) and the owner's spot-check of 5 events.
+3. Search performance (ROADMAP.md section 7, measured in docs/search-performance.md): the
+   owner decides whether it comes before Milestone 10; open question: start search at 3 characters?
 
 ## Pinned versions
 
@@ -408,3 +410,4 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | Network page starts at level 1 (company and its people), levels 2–3 and role toggles on demand, filtered in the browser (owner) |
 | 2026-11-01 | The overview's region chart was replaced by top legal forms: `region_code` is a VZD code without names in our data |
 | 2026-11-01 | `web/openapi.json` is the committed API contract; a Java test keeps it current, types are generated from it |
+| 2026-11-01 | Search at about 15 s in the frontend: measured (docs/search-performance.md), fixes planned in ROADMAP.md section 7; no code change yet |
