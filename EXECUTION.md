@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-11-01 · **Current milestone:** 7 (not started); 4 has two open real-data items
+**Last updated:** 2026-11-01 · **Current milestone:** 7 (in review, PR into `dev`); 4 has two open real-data items
 
 ## Status
 
@@ -17,7 +17,8 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 4. Diff + events | code merged into `dev` 2026-11-01 (PR #2, CI green); open: a capture a few days later, spot-check 5 events |
 | 5. Quality + index | done 2026-11-01, merged into `dev` (PR #3, CI green) |
 | 6. dbt | done 2026-11-01, merged into `dev` (PR #4, CI green) |
-| 7–10 | not started |
+| 7. Dagster orchestration | done 2026-11-01 on `milestone/7-dagster` (PR into `dev`) |
+| 8–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -184,24 +185,44 @@ board member removed; 47404003378: farm owner removed).
 - Real data: dbt build green on both captures (parity included); 330 mass-registration
   addresses (top 185); serving holds 3,000 stat rows and 330 feature rows.
 
-## Milestone 7: next steps, in order
+## What exists (Milestone 7)
 
-0. `git switch dev && git pull && git switch -c milestone/7-dagster`.
-1. Read PLAN.md Milestone 7, docs/architecture.md "Orchestration with Dagster" and section 6.2.
-   Ask the owner: Dagster version (latest 1.x with Python 3.12), dagster-dbt and
-   dagster-docker versions, and how the CLI talks to Pipes (the `pipes` module is empty).
-2. Add Dagster to `orchestration/requirements.txt`; `dagster` database in the `postgres`
-   service (already created); compose services `dagster-code`, `dagster-webserver`,
-   `dagster-daemon` (profile `orchestration`); `docker/dagster/dagster.yaml`, `workspace.yaml`.
-3. Assets per capture partition: `ur_raw_files` → `lake_snapshot` → `company_events` →
-   `quality_report` → dbt models → `search_index` → `retention`. Java steps run in the `cli`
-   image through Dagster Pipes (dagster-docker); dbt via dagster-dbt with dbt tests as checks.
-4. Asset checks from the quality report; blocking checks stop downstream assets.
-5. `weekly_capture` schedule (Monday 06:00 Europe/Riga), `make capture-now/-off/-on`,
-   freshness check, run failure sensor; implement `prune` (retention, section 6.2).
-6. pytest: definitions load, asset graph and partitions as expected.
-Memory: the cli step peaks at 2.2 GB; Dagster webserver + daemon + code add roughly 0.5–1 GB.
-Check the VM headroom before running a whole capture through Dagster.
+- `modules/pipes`: Dagster Pipes protocol 0.1 (`PipesSession`, `PipesParams`, `PipesContext`,
+  `PipesMetadata`, `Severity`). Tested against parameters encoded by dagster-pipes 1.13.28.
+- CLI: `Step` returns `StepOutcome` (metadata, checks); `StepRunner` reports them under Pipes
+  (blocking failures as ERROR) and allows one step per process there. `Wiring` builds the
+  metadata and checks per step and wires `prune`.
+- `quality`: `Checks` (pure; names grouped by asset), `CheckResult`, `PruneStep` (RAW_KEEP,
+  LAKE_KEEP, safety rules), `Thresholds.eventHardShare` (`QUALITY_EVENT_HARD_SHARE`, 0.10).
+- `ingest`: `Downloader` fetches only today's capture (Riga date); `RawLayout.captures`.
+  `diff`: `LakeCaptures.requirePreviousInLake`. `lake`: `LakeReader.columns`. `index`:
+  `MartReader.companies`.
+- `orchestration/lvregister_orchestration`: `partitions`, `java_assets` (6 assets through
+  `PipesDockerClient`, check specs, download retry, freshness policy), `dbt_assets`
+  (translator: lake sources → `lake_snapshot`, staging → quality gate), `automation` (jobs,
+  `weekly_capture`, `daily_housekeeping`, `run_failure_alert`), `definitions`, `commands`
+  (`capture-now`, `sync-partitions`, `status`). 13 pytest tests (`make dagster-test`, in CI).
+- `docker/dagster/dagster.yaml` (Postgres storage with `scheme: postgresql+psycopg2`, one run
+  at a time, compute logs on the `dagster-storage` volume, tick retention, freshness daemon) and
+  `workspace.yaml`, mounted read-only. Compose profile `orchestration`: `dagster-code`,
+  `dagster-webserver` (:3000), `dagster-daemon`. The orchestration image is built from the
+  repository root with the dbt manifest baked in.
+- dbt: `no_events_on_baseline` and the parity test stay valid after prune (checked on the
+  fixtures with the oldest snapshot deleted).
+- Real data: `make capture-now` for 2026-11-01 ran the whole pipeline through Dagster in about
+  25 minutes (download 24 s, lake 11 s, diff 12.6 min, quality 24 s, dbt 7.3 min, index
+  4.2 min, prune 13 s). All checks passed; 4 events as before; `counts_match_marts` compared
+  489,963 = 489,963; index wrote nothing (idempotent). Peak memory 2.96 GB of 3.8 GB.
+  `make capture-off` / `capture-on` work. Dagster idle: about 420 MB.
+- Removed a `dbt.log` committed by mistake in Milestone 6 (compiled SQL only, no data).
+
+## Milestone 8: next steps, in order
+
+0. After the Milestone 7 PR is merged: `git switch dev && git pull && git switch -c milestone/8-api`.
+1. Read PLAN.md Milestone 8 and section 13. Ask the owner about Spring Boot 4 version, Bucket4j
+   and springdoc versions before adding them.
+2. `modules/api` (the only module with Spring): reads through `ServingQueries` only.
+3. Memory: the API joins profile `core`; measure it next to Dagster (about 420 MB idle).
 
 ## Pinned versions
 
@@ -222,6 +243,9 @@ Check the VM headroom before running a whole capture through Dagster.
 | SeaweedFS | 4.51 | |
 | Python image | python:3.12.16-slim-bookworm | orchestration image |
 | dbt-core / dbt-duckdb / duckdb (Python) | 1.12.6 / 1.11.1 / 1.4.5 | pinned in `orchestration/requirements.txt` |
+| Dagster / dagster-pipes / dagster-webserver | 1.13.28 | owner decision 2026-11-01; Python 3.12 |
+| dagster-postgres / dagster-docker / dagster-dbt | 0.29.28 | released together with Dagster 1.13.28; `pip check` clean |
+| pytest | 9.2.0 | orchestration tests |
 | PostgreSQL image | 18.6-alpine3.24 | 19 is still RC (2026-10-31) |
 | PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime; works with PostgreSQL 18.6 |
 | testcontainers-postgresql | 2.0.5 | `org.testcontainers.postgresql.PostgreSQLContainer` |
@@ -238,6 +262,8 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
   daemon, no parallel builds and `-Xmx1g`. Stop the core stack (`make down`) before heavy
   builds if memory is tight. With lake + Postgres up, about 0.8 GB is in use
   (it was about 1.5 GB with Elasticsearch).
+- Dagster UI: http://localhost:3000 (`make up` or `make dagster`). Do not run `make build` while a
+  capture runs: Gradle (about 1.5 GB) next to diff (2.2 GB) and Dagster does not fit.
 - The Docker daemon does not always come back after a VM restart. Check it with `docker info`;
   if it's down, the owner starts it with `! doas rc-service docker start` in the Claude
   session.
@@ -289,3 +315,8 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | Parity test compares capture, company, event type and new value of name/status/legal form, not ids or payloads |
 | 2026-11-01 | dbt fixtures are generated by the Java pipeline (`DbtFixturesTest`) and committed; CI builds dbt on them |
 | 2026-11-01 | Stats and features in the serving store are replaced as a whole on every index run |
+| 2026-11-01 | Milestone 7: Dagster 1.13.28 + integrations 0.29.28; own Pipes implementation in `pipes` (official Java library archived, Jackson 2); Dagster fits the VM when runs and steps never overlap (owner: "all recommended") |
+| 2026-11-01 | Checks computed in Java (`Checks`), only declared in Dagster; blocking: files_complete, schema_unchanged, event_spike (hard share 0.10), drop_share, register_not_empty |
+| 2026-11-01 | Dynamic partitions (captures actually made); dbt assets share them; dbt runs behind the quality gate |
+| 2026-11-01 | `download` refuses past dates unless the manifest is complete; `diff` refuses when its previous capture was pruned; manifests are never pruned |
+| 2026-11-01 | Dagster run retention through a daily job (OSS Dagster only has tick retention); freshness via `FreshnessPolicy` and the freshness daemon (the check + sensor API is superseded) |

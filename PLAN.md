@@ -235,7 +235,7 @@ This is a demo, so it captures **once a week**, not every day.
 | Events, reports | forever | small: only changes and counts |
 | Marts | rebuilt each run | derived |
 | Serving (PostgreSQL) | latest company state, all events, all runs | upserts, grows only with events |
-| Dagster run history | 90 days | Dagster's run retention setting |
+| Dagster run history | 90 days | `dagster_housekeeping` job (OSS Dagster has a retention setting only for ticks) |
 
 - `prune` runs as the last step of every capture. It never deletes the latest capture, or a
   snapshot whose events have not been written.
@@ -560,22 +560,22 @@ Why dbt, and what marts are: [FAQ](docs/FAQ.md#what-does-dbt-add).
 ### Milestone 7: Dagster orchestration
 Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
 
-- [ ] `orchestration/` Python project and image; `dagster` database in the `postgres` service;
+- [x] `orchestration/` Python project and image; `dagster` database in the `postgres` service;
       compose services `dagster-code`, `dagster-webserver`, `dagster-daemon`
-- [ ] `pipes` module: the CLI reports materializations, metadata and check results to Dagster
-- [ ] Assets with one partition per capture date: `ur_raw_files` ─► `lake_snapshot` ─►
+- [x] `pipes` module: the CLI reports materializations, metadata and check results to Dagster
+- [x] Assets with one partition per capture date: `ur_raw_files` ─► `lake_snapshot` ─►
       `company_events` (reads the previous capture from the lake) ─► `quality_report` ─►
       dbt models ─► `search_index` ─► `retention`
-- [ ] Java steps launched in the `cli` image through Dagster Pipes; dbt via dagster-dbt with
+- [x] Java steps launched in the `cli` image through Dagster Pipes; dbt via dagster-dbt with
       dbt tests as asset checks
-- [ ] Asset checks from the quality report (drop share, orphans, unmapped values, event
+- [x] Asset checks from the quality report (drop share, orphans, unmapped values, event
       spikes, storage size); blocking checks stop downstream assets
-- [ ] `weekly_capture` schedule (day and time from Milestone 1), freshness check, run failure
+- [x] `weekly_capture` schedule (day and time from Milestone 1), freshness check, run failure
       sensor, retry policy with backoff for `download`
-- [ ] `make capture-now`, `make capture-off`, `make capture-on`, `make status` (section 6.2)
-- [ ] `prune` step and retention settings in `.env`; Dagster run retention 90 days
+- [x] `make capture-now`, `make capture-off`, `make capture-on`, `make status` (section 6.2)
+- [x] `prune` step and retention settings in `.env`; Dagster run retention 90 days
 - [ ] Reprocessing past captures from the lake (not from UR) works from the UI
-- [ ] pytest: definitions load, asset graph and partition mapping are as expected
+- [x] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
 - [ ] Spring Boot 4 app in `api/`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
