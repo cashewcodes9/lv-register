@@ -200,37 +200,57 @@ false merge of two people is worse than a missed match.
 
 What dbt adds and what marts are: [FAQ](FAQ.md#what-does-dbt-add), [marts](FAQ.md#what-are-marts).
 
-`transform/` is a dbt project on **dbt-duckdb**. DuckDB reads the lake and events straight
-from S3, so there is no warehouse database to load. Marts are written back to S3 as Parquet
-(external materialization); the DuckDB database file only holds views and build state.
+`transform/` is a dbt project on **dbt-duckdb** (dbt-core 1.12.6, dbt-duckdb 1.11.1, DuckDB
+1.4.5), run in the `orchestration` image (`make dbt-build`). DuckDB reads the lake and the
+events straight from S3, so there is no warehouse database to load. Marts are written back to
+`s3://lv-marts` as Parquet (external materialization); the DuckDB file in `/tmp` only holds
+views and build state.
 
-| Layer | Materialized | Models (names finalized after Milestone 1) |
+| Layer | Materialized | Models |
 |---|---|---|
-| Sources | Parquet and JSON Lines in S3 | one per MVP lake file, `events`, `reports` |
-| Staging | views | `stg_<file>`: rename and cast only, one per source |
-| Intermediate | views | `int_company_roles` (officers, members, stockholders, BOs as one role set), `int_snapshot_diff` (the diff in SQL) |
+| Sources | Parquet in S3 | `lake.<file>`: one per MVP file, all captures, all columns VARCHAR, plus `capture_date` and `file_row_number`. The events are read by the macro `read_events()` (JSON Lines, explicit columns, so the empty baseline file is fine) |
+| Seeds | table | `legal_forms`: the legal form table; `LegalFormsSeedTest` keeps it equal to the Java `LegalForms` |
+| Staging | views | `stg_<file>`, `stg_events`: clean and cast only, with the macros `clean_text`, `clean_code`, `reg_number`, `clean_date`, `clean_decimal` (the same rules as `lvregister.normalize.Text`) |
+| Intermediate | views | `int_companies` (validity, first duplicate, status, capital), `int_company_roles` (roles as value signatures), `int_snapshot_diff` (the diff in SQL) |
 | Marts | Parquet in `s3://lv-marts` | `dim_companies` (latest state), `fct_company_events`, `agg_companies_by_form_status_region`, `agg_events_per_capture`, `feat_mass_registration_addresses` |
 
 ```
-lake files ─► stg_* ─┬─► int_company_roles ─┬─► dim_companies ─┬─► agg_companies_by_form_status_region
-                     │                      │                  └─► feat_mass_registration_addresses
-                     └─► int_snapshot_diff ─┤
-events ─────► stg_events ───────────────────┴─► fct_company_events ─► agg_events_per_capture
+lake files ─► stg_* ─┬─► int_companies ─┬─► int_company_roles ─┬─► dim_companies ─┬─► agg_companies_by_form_status_region
+legal_forms (seed) ──┘                  │                      │                  └─► feat_mass_registration_addresses
+                                        └──────────────────────┴─► int_snapshot_diff ─┐ (parity test)
+events ─────► stg_events ─────────────────────────────────────────► fct_company_events ┴─► agg_events_per_capture
 ```
 
+**Parity.** `int_snapshot_diff` reimplements the Java normalization and diff rules in SQL.
+The test `parity_sql_diff_equals_java_events` compares, for every capture the diff step ran
+for, the capture date, the company, the event type, and the new value of name, status and
+legal form changes. Ids and full payloads are not compared: rebuilding the canonical JSON in
+SQL would add little. Breaking one SQL rule on purpose makes the test fail.
+
+**Fixtures.** `transform/fixtures/lake` holds three synthetic captures (Parquet and
+`events.jsonl`) that produce every event type plus formatting noise. `DbtFixturesTest`
+(Java) generates them with the real lake and diff steps and fails when they drift
+(`LV_WRITE_DBT_FIXTURES=1` rewrites them). `make dbt-fixtures` runs the whole dbt build on
+them with the `fixtures` target, without S3; CI does the same.
+
 **Tests:**
-- generic: unique and not-null keys, `relationships` from roles to companies (orphans),
-  `accepted_values` for mapped legal forms and statuses
-- singular, in `transform/tests/`:
-  - `int_snapshot_diff` equals the Java events for every capture (parity)
-  - no events on the baseline capture
-  - event ids unique per capture
-  - every company in `dim_companies` appears in the latest lake snapshot
-- severity: parity and key tests fail the build; drift checks (unmapped values) warn
+- generic: unique and not-null keys, `accepted_values` for statuses, legal families and event
+  types; unmapped legal forms warn
+- singular, in `transform/tests/`: parity (above), no events on the baseline capture, event ids
+  unique per capture, every company in `dim_companies` is in the latest register capture,
+  roles point to known companies (warns)
+
+On the real captures the build takes about 4 minutes; `dim_companies` and the feature mart
+match the Java normalizer and the source assessment (statuses, the top mass addresses with
+185, 157, 132, 124 and 119 active companies).
 
 **Exposures** declare the API and the frontend, so the lineage graph in `make dbt-docs` ends
 at the products that use the data. dbt sources carry `meta.dagster.asset_key`, so Dagster
 draws one graph from the download to the marts.
+
+The index step loads the small marts into the serving store as `stats`
+(`companies_by_form_status_region`, `events_per_capture`) and `features`
+(`mass_registration_addresses`), replaced as a whole on every run.
 
 ## Orchestration with Dagster
 

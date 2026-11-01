@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-11-01 · **Current milestone:** 6 (not started); 4 has two open real-data items
+**Last updated:** 2026-11-01 · **Current milestone:** 7 (not started); 4 has two open real-data items
 
 ## Status
 
@@ -16,7 +16,8 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 3. Storage + ingest + lake + normalize | done 2026-10-31, merged into `dev` (PR #1, CI green) |
 | 4. Diff + events | code merged into `dev` 2026-11-01 (PR #2, CI green); open: a capture a few days later, spot-check 5 events |
 | 5. Quality + index | done 2026-11-01, merged into `dev` (PR #3, CI green) |
-| 6–10 | not started |
+| 6. dbt | done 2026-11-01 on `milestone/6-dbt`, PR into `dev` |
+| 7–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -158,18 +159,49 @@ board member removed; 47404003378: farm owner removed).
 - The `run` command still fails at `prune` (not implemented; retention is section 6.2, planned
   with Dagster in Milestone 7).
 
-## Milestone 6: next steps, in order
+## What exists (Milestone 6)
 
-0. `git switch dev && git pull && git switch -c milestone/6-dbt`.
-1. Read PLAN.md Milestone 6, sections 9 and 10, and docs/architecture.md "dbt". Ask the owner
-   before choosing: the dbt container image and the dbt-duckdb version (must work with DuckDB
-   1.4.x, no AVX), and where dbt reads the events (JSON Lines in the lake).
-2. dbt project in `transform/` with sources over the lake (Parquet) and events, staging and
-   intermediate models per MVP file, marts as Parquet in `s3://lv-marts`.
-3. SQL diff model and the parity test against the Java events; singular tests; exposures;
-   `make dbt-build`, `make dbt-docs`.
-4. The value feature (section 10, mass-registration addresses) as a mart; extend the serving
-   port with stats and features (contract tests first), load them in the index step.
+- `docs/FAQ.md`: why PostgreSQL, dbt, Dagster, marts, SeaweedFS and weekly captures; linked
+  from README, PLAN.md and docs/architecture.md.
+- `orchestration/`: `Dockerfile` (python:3.12.16-slim-bookworm, httpfs + json baked in) and
+  `requirements.txt` (duckdb 1.4.5, dbt-core 1.12.6, dbt-duckdb 1.11.1). Dagster joins this
+  image in Milestone 7. Compose service `dbt` (profile tools, mounts `./transform`).
+- `transform/`: dbt project (see docs/architecture.md "Transformation with dbt"): sources,
+  seed `legal_forms`, 12 staging models, `int_companies`, `int_company_roles`,
+  `int_snapshot_diff`, 5 marts, 5 singular tests, exposures. `profiles.yml` targets `lake`
+  (SeaweedFS) and `fixtures` (local). `LV_LAKE_ROOT` sets the lake (dbt does not render
+  `env_var` inside project `vars`, so it is read with `env_var` where used).
+- `transform/fixtures/lake`: 3 synthetic captures (340 KB, Parquet + events) from
+  `DbtFixturesTest` (diff module); regenerate with
+  `LV_WRITE_DBT_FIXTURES=1 make gradle ARGS=":diff:test --tests *DbtFixturesTest"`.
+- Make: `dbt-build` (real lake, ~4 min), `dbt-fixtures` (CI), `dbt-docs` (port 8081).
+  Compose needs `--profile core` even with `--no-deps`, because `dbt` depends on `lake-init`.
+- Serving: `StatView`, `FeatureView`, `replaceStats`, `replaceFeature`, `stats`, `feature`
+  (contract: 15 tests); Postgres migration V2 (`stats`, `features`). `MartReader` in `index`
+  loads `companies_by_form_status_region`, `events_per_capture`, `mass_registration_addresses`.
+- `DuckDb.queryRows` for small results.
+- CI runs `make dbt-fixtures` after the Gradle build.
+- Real data: dbt build green on both captures (parity included); 330 mass-registration
+  addresses (top 185); serving holds 3,000 stat rows and 330 feature rows.
+
+## Milestone 7: next steps, in order
+
+0. `git switch dev && git pull && git switch -c milestone/7-dagster`.
+1. Read PLAN.md Milestone 7, docs/architecture.md "Orchestration with Dagster" and section 6.2.
+   Ask the owner: Dagster version (latest 1.x with Python 3.12), dagster-dbt and
+   dagster-docker versions, and how the CLI talks to Pipes (the `pipes` module is empty).
+2. Add Dagster to `orchestration/requirements.txt`; `dagster` database in the `postgres`
+   service (already created); compose services `dagster-code`, `dagster-webserver`,
+   `dagster-daemon` (profile `orchestration`); `docker/dagster/dagster.yaml`, `workspace.yaml`.
+3. Assets per capture partition: `ur_raw_files` → `lake_snapshot` → `company_events` →
+   `quality_report` → dbt models → `search_index` → `retention`. Java steps run in the `cli`
+   image through Dagster Pipes (dagster-docker); dbt via dagster-dbt with dbt tests as checks.
+4. Asset checks from the quality report; blocking checks stop downstream assets.
+5. `weekly_capture` schedule (Monday 06:00 Europe/Riga), `make capture-now/-off/-on`,
+   freshness check, run failure sensor; implement `prune` (retention, section 6.2).
+6. pytest: definitions load, asset graph and partitions as expected.
+Memory: the cli step peaks at 2.2 GB; Dagster webserver + daemon + code add roughly 0.5–1 GB.
+Check the VM headroom before running a whole capture through Dagster.
 
 ## Pinned versions
 
@@ -188,6 +220,8 @@ board member removed; 47404003378: farm owner removed).
 | DuckDB httpfs extension | 1.4.5, linux_amd64 | baked into the cli image by checksum (`Dockerfile`, stage `duckdb-extensions`); tests download it at run time |
 | FastCSV | dropped | DuckDB is the only CSV parser (owner decision 2026-10-31) |
 | SeaweedFS | 4.51 | |
+| Python image | python:3.12.16-slim-bookworm | orchestration image |
+| dbt-core / dbt-duckdb / duckdb (Python) | 1.12.6 / 1.11.1 / 1.4.5 | pinned in `orchestration/requirements.txt` |
 | PostgreSQL image | 18.6-alpine3.24 | 19 is still RC (2026-10-31) |
 | PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime; works with PostgreSQL 18.6 |
 | testcontainers-postgresql | 2.0.5 | `org.testcontainers.postgresql.PostgreSQLContainer` |
@@ -251,3 +285,7 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | diff writes the normalize counts (`normalize.json`) for quality; index loads the snapshot again (1 GB is fine, owner) |
 | 2026-11-01 | Serving read model: plain view records stored as documents; `asOf` = capture in which the state was first seen; companies only rewritten when their content hash changes |
 | 2026-11-01 | Runs keyed by run id (several runs per capture are kept) |
+| 2026-11-01 | Milestone 6 choices made with the recommended options (owner said "go on"): one orchestration image for dbt and later Dagster; dbt reads the events JSON Lines; pip with exact versions |
+| 2026-11-01 | Parity test compares capture, company, event type and new value of name/status/legal form, not ids or payloads |
+| 2026-11-01 | dbt fixtures are generated by the Java pipeline (`DbtFixturesTest`) and committed; CI builds dbt on them |
+| 2026-11-01 | Stats and features in the serving store are replaced as a whole on every index run |

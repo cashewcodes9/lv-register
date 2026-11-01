@@ -548,14 +548,14 @@ Rules:
 ### Milestone 6: dbt
 Why dbt, and what marts are: [FAQ](docs/FAQ.md#what-does-dbt-add).
 
-- [ ] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
-- [ ] Sources with tests; staging and intermediate models per MVP file
-- [ ] Marts: `dim_companies`, `fct_company_events`, stats aggregates, value feature
+- [x] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
+- [x] Sources with tests; staging and intermediate models per MVP file
+- [x] Marts: `dim_companies`, `fct_company_events`, stats aggregates, value feature
       (section 10), written as Parquet to `s3://lv-marts`
-- [ ] SQL diff model and the parity test against the Java events (section 9)
-- [ ] Singular tests from section 9; exposures for the API and frontend
-- [ ] `make dbt-build`, `make dbt-docs` (lineage graph)
-- [ ] Indexer loads stats and feature marts into the serving store
+- [x] SQL diff model and the parity test against the Java events (section 9)
+- [x] Singular tests from section 9; exposures for the API and frontend
+- [x] `make dbt-build`, `make dbt-docs` (lineage graph)
+- [x] Indexer loads stats and feature marts into the serving store
 
 ### Milestone 7: Dagster orchestration
 Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
