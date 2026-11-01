@@ -23,7 +23,6 @@ RUN pip install -r /tmp/requirements.txt \
 USER lvregister
 COPY --chown=${HOST_UID}:${HOST_GID} transform /work/transform
 COPY --chown=${HOST_UID}:${HOST_GID} orchestration /work/orchestration
-COPY --chown=${HOST_UID}:${HOST_GID} docker/dagster/dagster.yaml docker/dagster/workspace.yaml /opt/dagster/home/
 # The dbt manifest that dagster-dbt loads (parse needs no connection).
 RUN cd /work/transform && dbt parse --quiet && test -f target/manifest.json
 

@@ -116,7 +116,8 @@ def java_asset(step: JavaStep, extra_deps: Sequence[dg.AssetKey] = ()) -> dg.Ass
                 image=cli.image,
                 command=[step.step, "--date", context.partition_key],
                 env=cli.environment(context.run_id),
-                container_kwargs={"network": cli.network, "labels": {CONTAINER_LABEL: step.step}},
+                container_kwargs={"network": cli.network, "labels": {CONTAINER_LABEL: step.step},
+                                  "name": f"lv-register-cli-{step.step}-{context.run_id[:8]}-{context.retry_number}"},
             ).get_results()
         finally:
             remove_finished_containers()

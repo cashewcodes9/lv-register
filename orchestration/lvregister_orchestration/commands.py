@@ -55,7 +55,8 @@ def sync_partitions() -> None:
 def status() -> None:
     instance = dg.DagsterInstance.get()
     for state in instance.all_instigator_state():
-        print(f"{state.instigator_type.value.lower():8} {state.name:28} {state.status.value}")
+        shown = "RUNNING (default in code)" if state.status.value == "DECLARED_IN_CODE" else state.status.value
+        print(f"{state.instigator_type.value.lower():8} {state.name:28} {shown}")
     keys = sorted(instance.get_dynamic_partitions(captures.name))
     print(f"captures in Dagster: {len(keys)}, latest {keys[-1] if keys else '-'}")
     for record in instance.get_run_records(limit=5):
