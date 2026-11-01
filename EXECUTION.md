@@ -336,6 +336,11 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
   (it was about 1.5 GB with Elasticsearch).
 - Dagster UI: http://localhost:3000 (`make up` or `make dagster`). Do not run `make build` while a
   capture runs: Gradle (about 1.5 GB) next to diff (2.2 GB) and Dagster does not fit.
+- Access from the owner's Windows PC: SSH tunnel over Tailscale (`ssh -N lv-register`, key login,
+  local forwards for 8080, 3000, 8888, 5432 → 15432, 8333, 5173, 8081). Alpine's sshd has
+  `AllowTcpForwarding no`; `/etc/ssh/sshd_config.d/lv-register-tunnel.conf` allows local
+  forwarding for dev002 only, only to those ports (`PermitOpen`). A new service port must be
+  added there. Services stay bound to 127.0.0.1.
 - The Docker daemon does not always come back after a VM restart. Check it with `docker info`;
   if it's down, the owner starts it with `! doas rc-service docker start` in the Claude
   session.
