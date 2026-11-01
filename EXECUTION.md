@@ -361,3 +361,4 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | Search on a narrow `company_search` table; queries with more than 1,000 substring matches are ranked exact, prefix, shorter names (no trigram similarity over every match) |
 | 2026-11-01 | The API never migrates the serving schema; the index step owns it (V3/V4 were applied by running `index` once) |
 | 2026-11-01 | Module folders stay flat; grouping into shared / pipeline / api is on ROADMAP.md (owner) |
+| 2026-11-01 | Frontend UI: shadcn/ui (Radix + Tailwind) instead of a component library; Semantic UI dropped (unmaintained, no React 19); network graph in d3.js (owner) |

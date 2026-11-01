@@ -97,7 +97,7 @@ logic lives in Java.
 | Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
 | Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker, git and make |
 | CI | GitHub Actions: backend build + test, dbt parse + build on fixtures, Dagster definitions load, frontend lint + build, Docker image builds |
-| Frontend | React + TypeScript (Vite), TanStack Query for data fetching, Recharts for charts, react-force-graph or d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
+| Frontend | React + TypeScript (Vite), shadcn/ui components (Radix + Tailwind CSS, copied into `web/`; owner decision 2026-11-01), TanStack Query for data fetching, d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
 
 Why this split: the pipeline is batch code where a framework adds nothing, so it stays plain
 Java and runs via Picocli. The React-facing API needs middleware (rate limiting, CORS,
@@ -491,7 +491,9 @@ Pages:
 Rules:
 - Data fetching with TanStack Query only, against the generated API types.
 - No mock data once the API exists. Build pages against real API responses.
-- Keep styling simple and clean. Function over decoration.
+- Keep styling simple and clean. Function over decoration. UI components from shadcn/ui
+  (Radix primitives + Tailwind CSS), kept in `web/src/components/ui`; no unmaintained
+  libraries (Semantic UI was considered and dropped: no release since 2022/2023, no React 19).
 
 ## 15. Milestones
 
