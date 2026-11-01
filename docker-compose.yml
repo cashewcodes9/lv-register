@@ -1,8 +1,8 @@
 # Services and profiles from PLAN.md section 6.1.
 #   core           long-running: lake (SeaweedFS S3), postgres, api (:8080).
 #   orchestration  Dagster: dagster-code, dagster-webserver (:3000), dagster-daemon.
-#   tools          one-shot containers started with `docker compose run`: build, cli, dbt, duckdb.
-# The dev profile (web-dev) joins in Milestone 9.
+#   tools          one-shot containers started with `docker compose run`: build, cli, dbt, web, duckdb.
+#   dev            web-dev: Vite dev server with hot reload (:5173).
 name: lv-register
 
 x-env: &env
@@ -129,6 +129,8 @@ services:
       LV_TEST_HEAP: ${LV_TEST_HEAP:-512m}
       # Optional: DbtFixturesTest rewrites transform/fixtures/lake when set to 1.
       LV_WRITE_DBT_FIXTURES: ${LV_WRITE_DBT_FIXTURES:-}
+      # Optional: ApiIntegrationTest rewrites web/openapi.json when set to 1 (make openapi).
+      LV_WRITE_OPENAPI: ${LV_WRITE_OPENAPI:-}
       DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
 
   cli:
@@ -291,6 +293,37 @@ services:
       dagster-code:
         condition: service_healthy
     restart: unless-stopped
+
+  # Frontend (Milestone 9): npm in the Node LTS image, as the host user, on ./web. Dependencies
+  # land in web/node_modules (git-ignored); the npm cache in .cache/npm (git-ignored).
+  web:
+    profiles: ["tools"]
+    image: node:24.22.2-alpine
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /work/web
+    entrypoint: ["npm"]
+    environment: &web-env
+      HOME: /tmp
+      npm_config_cache: /work/.cache/npm
+      npm_config_update_notifier: "false"
+      npm_config_fund: "false"
+    volumes: &web-volumes
+      - ./web:/work/web
+      - ./.cache:/work/.cache
+
+  # Vite dev server with hot reload on http://localhost:5173, calling the API on :8080 (CORS).
+  web-dev:
+    profiles: ["dev"]
+    image: node:24.22.2-alpine
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    working_dir: /work/web
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+    environment:
+      <<: *web-env
+      VITE_API_BASE: http://localhost:8080
+    volumes: *web-volumes
+    ports:
+      - "127.0.0.1:5173:5173"
 
   duckdb:
     profiles: ["tools"]

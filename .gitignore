@@ -32,3 +32,6 @@ transform/dbt_packages/
 *.duckdb.wal
 # dbt log of a run before DBT_LOG_PATH was set; never commit dbt logs
 transform/{{*
+
+# Frontend and tool caches
+/.cache/

@@ -12,13 +12,15 @@ import lvregister.serving.Page;
 import lvregister.serving.RunView;
 import lvregister.serving.SearchHit;
 import lvregister.serving.StatView;
+import org.jspecify.annotations.Nullable;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The API's response records (PLAN.md section 13), separate from the serving views: absent
  * values are {@code null} instead of {@code Optional}, and stored JSON (event payloads, quality
- * reports, feature rows) is embedded as JSON, not as a string.
+ * reports, feature rows) is embedded as JSON, not as a string. Fields that may be {@code null}
+ * carry {@link Nullable}; {@link OpenApiConfig} marks all others required in the OpenAPI spec.
  */
 public final class Dtos {
 
@@ -31,18 +33,22 @@ public final class Dtos {
     public record SearchHitDto(String regNumber, String name, String legalFormCode, String status, double score) {}
 
     public record CompanyDto(String regNumber, String name, String legalFormCode, String legalFamily, String status,
-            AddressDto address, LocalDate registered, LocalDate terminated, MoneyDto capital, List<RoleDto> roles,
+            @Nullable AddressDto address, @Nullable LocalDate registered, @Nullable LocalDate terminated,
+            @Nullable MoneyDto capital, List<RoleDto> roles,
             LocalDate asOf) {}
 
-    public record AddressDto(String line, String postalCode, Long vzdId, String atvk) {}
+    public record AddressDto(String line, @Nullable String postalCode, @Nullable Long vzdId, @Nullable String atvk) {}
 
     public record MoneyDto(String amount, String currency) {}
 
-    public record RoleDto(String kind, PartyDto holder, String position, String governingBody, String shareRegister,
-            String shares, MoneyDto nominalValue, List<String> nationalities, String residence, LocalDate since) {}
+    public record RoleDto(String kind, PartyDto holder, @Nullable String position, @Nullable String governingBody,
+            @Nullable String shareRegister,
+            @Nullable String shares, @Nullable MoneyDto nominalValue, List<String> nationalities, @Nullable String residence,
+            @Nullable LocalDate since) {}
 
     /** {@code personKey}: a pseudonymous key linking the same person across companies. */
-    public record PartyDto(String kind, String name, String regNumber, String personKey, List<PartyDto> owners) {}
+    public record PartyDto(String kind, String name, @Nullable String regNumber, @Nullable String personKey,
+            List<PartyDto> owners) {}
 
     public record EventDto(String id, String type, String regNumber, LocalDate previousCapture, LocalDate capture,
             JsonNode payload) {}
@@ -59,9 +65,10 @@ public final class Dtos {
 
     public record NetworkDto(String root, List<NodeDto> nodes, List<EdgeDto> edges, boolean truncated) {}
 
-    public record NodeDto(String id, String type, String label, String regNumber, String status, int depth) {}
+    public record NodeDto(String id, String type, String label, @Nullable String regNumber, @Nullable String status,
+            int depth) {}
 
-    public record EdgeDto(String from, String to, String role, String position) {}
+    public record EdgeDto(String from, String to, String role, @Nullable String position) {}
 
     public static <V, D> PageDto<D> page(Page<V> page, Function<V, D> map) {
         return new PageDto<>(page.items().stream().map(map).toList(), page.page(), page.size(), page.total());

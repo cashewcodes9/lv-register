@@ -7,7 +7,7 @@ export DOCKER_GID := $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo
 # Commands of the orchestration image, run in the dagster-code container.
 DAGSTER_CMD := $(COMPOSE) --profile core --profile orchestration exec -T dagster-code python -m lvregister_orchestration.commands
 
-.PHONY: help up down cli-image api build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
+.PHONY: help up down cli-image api openapi npm web-check web-dev build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
 
 ## Show the targets
 help:
@@ -19,7 +19,7 @@ up: cli-image
 
 ## Stop all services (data volumes are kept)
 down:
-	$(COMPOSE) --profile core --profile orchestration --profile tools down
+	$(COMPOSE) --profile core --profile orchestration --profile tools --profile dev down
 
 ## Build the cli image that Dagster starts for the Java steps, if it is missing
 cli-image:
@@ -85,6 +85,27 @@ dagster-test:
 	docker run --rm -w /work/orchestration \
 	  -v $(CURDIR)/modules/quality/src/main/java/lvregister/quality/Checks.java:/work/contract/Checks.java:ro \
 	  lv-register/orchestration:dev python -m pytest -q -p no:cacheprovider tests
+
+## Rewrite web/openapi.json from the API (the frontend types are generated from it)
+openapi:
+	$(COMPOSE) run --rm -e LV_WRITE_OPENAPI=1 build :api:test --tests "*ApiIntegrationTest"
+
+## Any npm command for the frontend, in the Node container: make npm ARGS="install"
+npm:
+	@mkdir -p .cache
+	$(COMPOSE) --profile core --profile tools run --rm --no-deps web $(ARGS)
+
+## Frontend checks as in CI: install from the lock file, types, lint, tests, production build
+web-check:
+	@mkdir -p .cache
+	$(COMPOSE) --profile core --profile tools run --rm --no-deps web ci
+	$(COMPOSE) --profile core --profile tools run --rm --no-deps web run check
+
+## Vite dev server with hot reload on http://localhost:5173 (needs the API: make up)
+web-dev:
+	@mkdir -p .cache
+	$(COMPOSE) --profile dev up -d web-dev
+	@echo "Frontend (dev): http://localhost:5173"
 
 ## Service state, schedule state, captures, last runs, bucket usage and database sizes
 status:
