@@ -1,6 +1,14 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build for the Java images (PLAN.md section 6.1).
-# Stages: jdk (Gradle build) -> cli and api. The `web` stage joins in Milestone 9.
+# Stages: web (React build) and jdk (Gradle build) -> cli and api (API + web/dist on one port).
+
+# The React app (Milestone 9): installed from the lock file and built with the pinned Node LTS.
+FROM node:24.22.2-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json web/.npmrc ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
 
 FROM eclipse-temurin:25.0.5_8-jdk-noble AS jdk
 WORKDIR /src
@@ -9,7 +17,7 @@ COPY gradle/ gradle/
 COPY buildSrc/ buildSrc/
 COPY modules/ modules/
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew --no-daemon :cli:installDist :api:bootJar
+    ./gradlew --no-daemon :cli:installDist
 
 # DuckDB's httpfs extension, pre-installed so the lake step needs no extension download at
 # run time. Must match the DuckDB JDBC version (1.4.5).
@@ -33,10 +41,18 @@ WORKDIR /tmp
 ENTRYPOINT ["/opt/lv-register/bin/lv-register"]
 CMD ["--help"]
 
-# The read API (Spring Boot). Production target; serves web/dist from Milestone 9 on.
+# The api jar with the frontend in classpath:/static. Only this stage depends on `web`, so a
+# frontend change does not rebuild the cli image.
+FROM jdk AS api-jar
+COPY --from=web /web/dist /web-dist
+ENV LV_WEB_DIST=/web-dist
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew --no-daemon :api:bootJar
+
+# The read API (Spring Boot) with the frontend. Production target.
 FROM eclipse-temurin:25.0.5_8-jre-noble AS api
 RUN useradd --system --uid 10001 --no-create-home lvregister
-COPY --from=jdk /src/modules/api/build/libs/api-0.1.0-SNAPSHOT.jar /opt/lv-register/api.jar
+COPY --from=api-jar /src/modules/api/build/libs/api-0.1.0-SNAPSHOT.jar /opt/lv-register/api.jar
 USER lvregister
 WORKDIR /tmp
 EXPOSE 8080

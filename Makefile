@@ -7,7 +7,7 @@ export DOCKER_GID := $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo
 # Commands of the orchestration image, run in the dagster-code container.
 DAGSTER_CMD := $(COMPOSE) --profile core --profile orchestration exec -T dagster-code python -m lvregister_orchestration.commands
 
-.PHONY: help up down cli-image api openapi npm web-check web-dev build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
+.PHONY: help up down cli-image api openapi npm web-check web-smoke web-dev build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
 
 ## Show the targets
 help:
@@ -100,6 +100,14 @@ web-check:
 	@mkdir -p .cache
 	$(COMPOSE) --profile core --profile tools run --rm --no-deps web ci
 	$(COMPOSE) --profile core --profile tools run --rm --no-deps web run check
+
+## Browser smoke test of the running stack (make up first); screenshots in .cache/screenshots
+web-smoke:
+	@mkdir -p .cache/screenshots && chmod a+rwx .cache/screenshots
+	docker run --rm --network lv-register_default -e COMPANY=$(COMPANY) \
+	  -v $(CURDIR)/web/e2e:/e2e:ro -v $(CURDIR)/.cache/screenshots:/out -w /tmp \
+	  mcr.microsoft.com/playwright:v1.64.1-noble \
+	  sh -c "npm i -s --no-audit --no-fund playwright@1.64.1 >/dev/null 2>&1 && cp /e2e/smoke.mjs . && node smoke.mjs"
 
 ## Vite dev server with hot reload on http://localhost:5173 (needs the API: make up)
 web-dev:

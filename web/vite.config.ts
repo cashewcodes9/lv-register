@@ -8,7 +8,7 @@ import { defineConfig } from "vite";
 // the dev server). In production Spring Boot serves the built app, so API calls are same-origin.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  resolve: { alias: { "@": path.resolve(__dirname, "./src") } },
+  resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
   build: { outDir: "dist", sourcemap: false },
   test: { environment: "jsdom", include: ["src/**/*.test.{ts,tsx}"] },
 });
