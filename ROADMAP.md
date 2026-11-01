@@ -113,3 +113,34 @@ modules/
 - [ ] Update paths in the Makefile (`dagster-test` mounts `Checks.java`), docs and README
 - [ ] Optional: an ArchUnit or Gradle rule that `api` depends on `shared` modules only
 - [ ] Its own small PR, with no other changes, so the moves are easy to review
+
+## 6. Companies by region, with names
+
+The overview was meant to show companies by region (PLAN.md section 14). The register gives
+only codes, so the chart was replaced by "top legal forms" in Milestone 9:
+
+- `region`, `city`: codes of the State Address Register (VZD, Valsts adrešu reģistrs), for
+  example `100016583` for a municipality; `region` is `0` when the address is in a state city
+  outside any municipality (Riga, Jūrmala, …), so "0" is mostly Riga
+- `atvk`: the administrative territory code of the Central Statistical Bureau (CSP), 7 digits;
+  NULL for 65,512 rows (source assessment)
+
+Plan:
+
+- [ ] Look up the names in VZD's open data on data.gov.lv (territorial units: municipalities
+      and state cities, with the same codes the register uses). About 60 rows that change only
+      with a territorial reform: a dbt seed (`seeds/territories.csv`) with code, name and type
+      is enough, no weekly download. Record the source URL, date and licence in the seed's
+      docs; check the licence first
+- [ ] Location of a company: `city` when `region` is `0` (state cities), else `region`
+- [ ] Optional: CSP's ATVK classifier (open data) to add the six statistical regions (Rīga,
+      Pierīga, Vidzeme, Kurzeme, Zemgale, Latgale): a readable chart of 6 bars, plus the top 10
+      municipalities
+- [ ] The 2021 administrative reform (119 municipalities → 43): terminated companies may
+      carry old codes. Map them to their successor where the classifier gives one, else show
+      "former municipality"; a dbt test that every code of an active company has a name
+- [ ] Mart `agg_companies_by_region` (region name, type, status, companies), loaded by the
+      index step as a stat like the others (no port change); the overview chart comes back
+      with names
+- [ ] Check first: do the VZD codes in the published dataset match every `region` and `city`
+      value in the register? Count the unmatched ones on a real capture
