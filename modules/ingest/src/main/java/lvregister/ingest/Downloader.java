@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
@@ -27,10 +28,17 @@ import org.slf4j.LoggerFactory;
  * <p>Idempotent: a file already in the capture's manifest, with an object of the recorded
  * size, is not downloaded again. A capture is fixed once written; re-running it never
  * replaces a file with newer content.
+ *
+ * <p>UR publishes only the current state, so only today's capture (Riga date) is fetched. For a
+ * past date the step succeeds without fetching when the manifest lists every file (Dagster
+ * reprocessing; the CSVs may already be pruned), and fails otherwise.
  */
 public final class Downloader {
 
     private static final Logger LOG = LoggerFactory.getLogger(Downloader.class);
+
+    /** Capture dates are Riga dates (docs/FAQ.md, weekly captures). */
+    public static final ZoneId CAPTURE_ZONE = ZoneId.of("Europe/Riga");
 
     private final Http http;
     private final URI catalogUrl;
@@ -51,6 +59,15 @@ public final class Downloader {
 
     public Result run(LocalDate captureDate) throws IOException {
         Manifest manifest = readManifest(captureDate);
+        LocalDate today = LocalDate.ofInstant(clock.instant(), CAPTURE_ZONE);
+        if (!captureDate.equals(today)) {
+            if (manifest.files().size() == SourceFile.values().length) {
+                LOG.info("capture {} is complete in the manifest: nothing to download for a past date", captureDate);
+                return new Result(0, SourceFile.values().length, 0);
+            }
+            throw new IllegalStateException("capture " + captureDate + " is incomplete, and UR publishes only the"
+                    + " current state: only today's capture (" + today + ", Europe/Riga) can be downloaded");
+        }
         Map<SourceFile, CatalogEntry> catalog = CkanCatalog.parse(http.getBytes(catalogUrl));
         int downloaded = 0;
         int skipped = 0;

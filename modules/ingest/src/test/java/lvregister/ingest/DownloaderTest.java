@@ -104,6 +104,29 @@ class DownloaderTest {
 
 
     @Test
+    void aPastCaptureIsNeverFetchedAgain() throws Exception {
+        downloader.run(DAY);
+        raw.delete("date=2026-11-02/officers.csv");
+        Downloader later = new Downloader(new Http(HttpClient.newHttpClient(), 1, Duration.ofMillis(1)), ur.catalogUrl(), raw,
+                tmp.resolve("work"), Clock.fixed(Instant.parse("2026-11-09T05:00:00Z"), ZoneOffset.UTC));
+        int requests = ur.fileRequests();
+
+        Downloader.Result again = later.run(DAY);
+
+        assertThat(again.downloaded()).isZero();
+        assertThat(again.skipped()).isEqualTo(SourceFile.values().length);
+        assertThat(ur.fileRequests()).isEqualTo(requests);
+        assertThat(raw.exists("date=2026-11-02/officers.csv")).isFalse();
+    }
+
+    @Test
+    void anIncompletePastCaptureFails() throws Exception {
+        assertThatThrownBy(() -> downloader.run(DAY.minusDays(7)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("only today's capture (2026-11-02");
+        assertThat(raw.exists("date=2026-10-26/manifest.json")).isFalse();
+    }
+
+    @Test
     void notFoundFailsAtOnceAndKeepsWhatWasStored() throws Exception {
         ur.gone.add("officers.csv");
 
