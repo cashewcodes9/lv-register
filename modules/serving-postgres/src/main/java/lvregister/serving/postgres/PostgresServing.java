@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
@@ -22,6 +23,7 @@ import lvregister.serving.CompanyView;
 import lvregister.serving.EventView;
 import lvregister.serving.FeatureView;
 import lvregister.serving.Page;
+import lvregister.serving.PartyLink;
 import lvregister.serving.RunView;
 import lvregister.serving.SearchHit;
 import lvregister.serving.StatView;
@@ -32,7 +34,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The serving store on PostgreSQL (docs/architecture.md, "Serving"): companies as JSON documents
- * with a trigram search column, events and runs with their JSON as written by the pipeline.
+ * (search through the narrow company_search table, role links in party_roles, both kept by
+ * triggers), events and runs with their JSON as written by the pipeline.
  * Plain JDBC; the schema is a Flyway migration run by {@link #prepare()}.
  */
 public final class PostgresServing implements ServingWriter, ServingQueries, AutoCloseable {
@@ -40,16 +43,31 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final int BATCH = 1000;
 
+    /**
+     * Above this many substring matches a query counts as broad (a common word such as
+     * "sabiedriba", 193,000 names): typo tolerance adds nothing, and ranking every match by
+     * trigram similarity costs seconds of CPU. Broad queries return the substring matches,
+     * ranked exact name, then prefix, then shorter names first.
+     */
+    static final int BROAD_MATCHES = 1000;
+
     private final DataSource dataSource;
     private final Runnable closer;
+    private final int broadMatches;
 
     public PostgresServing(DataSource dataSource) {
-        this(dataSource, () -> { });
+        this(dataSource, () -> { }, BROAD_MATCHES);
     }
 
-    private PostgresServing(DataSource dataSource, Runnable closer) {
+    /** For tests: a small {@code broadMatches} exercises the broad-query path on small data. */
+    PostgresServing(DataSource dataSource, int broadMatches) {
+        this(dataSource, () -> { }, broadMatches);
+    }
+
+    private PostgresServing(DataSource dataSource, Runnable closer, int broadMatches) {
         this.dataSource = dataSource;
         this.closer = closer;
+        this.broadMatches = broadMatches;
     }
 
     /** A small pool: the pipeline writes from one thread, the API reads with a few. */
@@ -61,7 +79,7 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
         config.setMaximumPoolSize(maxPoolSize);
         config.setPoolName("serving");
         HikariDataSource ds = new HikariDataSource(config);
-        return new PostgresServing(ds, ds::close);
+        return new PostgresServing(ds, ds::close, BROAD_MATCHES);
     }
 
     // ---- writer ----
@@ -249,6 +267,7 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
             WITH q AS (SELECT lower(lv_unaccent(?)) AS t, ? AS raw),
                  p AS (SELECT t, raw, '%' || replace(replace(replace(t, '\\', '\\\\'), '%', '\\%'), '_', '\\_') || '%' AS pattern FROM q)
             """;
+    private static final String LIKE = "c.name_search LIKE p.pattern ESCAPE '\\'";
     private static final String MATCH =
             "(c.reg_number = p.raw OR c.name_search LIKE p.pattern ESCAPE '\\' OR c.name_search % p.t)";
 
@@ -260,21 +279,20 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
             return new Page<>(List.of(), page, size, 0);
         }
         return withConnection(conn -> {
-            long total;
-            try (PreparedStatement ps = conn.prepareStatement(QUERY + "SELECT count(*) FROM companies c, p WHERE " + MATCH)) {
-                ps.setString(1, text);
-                ps.setString(2, text);
-                try (ResultSet rs = ps.executeQuery()) {
-                    rs.next();
-                    total = rs.getLong(1);
-                }
-            }
+            boolean broad = count(conn, "SELECT count(*) FROM (SELECT 1 FROM company_search c, p WHERE " + LIKE
+                    + " LIMIT " + (broadMatches + 1) + ") x", text) > broadMatches;
+            String match = broad ? "(c.reg_number = p.raw OR " + LIKE + ")" : MATCH;
+            String order = broad
+                    ? "(c.reg_number = p.raw) DESC, (c.name_search = p.t) DESC, (c.name_search LIKE p.t || '%') DESC,"
+                            + " length(c.name_search), c.name, c.reg_number"
+                    : "score DESC, c.name, c.reg_number";
+            long total = count(conn, "SELECT count(*) FROM company_search c, p WHERE " + match, text);
             List<SearchHit> hits = new ArrayList<>();
             try (PreparedStatement ps = conn.prepareStatement(QUERY
                     + "SELECT c.reg_number, c.name, c.legal_form, c.status,"
                     + " CASE WHEN c.reg_number = p.raw THEN 2.0 ELSE similarity(c.name_search, p.t) END AS score"
-                    + " FROM companies c, p WHERE " + MATCH
-                    + " ORDER BY score DESC, c.name, c.reg_number LIMIT ? OFFSET ?")) {
+                    + " FROM company_search c, p WHERE " + match
+                    + " ORDER BY " + order + " LIMIT ? OFFSET ?")) {
                 ps.setString(1, text);
                 ps.setString(2, text);
                 ps.setInt(3, size);
@@ -289,6 +307,17 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
         });
     }
 
+    private static long count(Connection conn, String select, String text) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(QUERY + select)) {
+            ps.setString(1, text);
+            ps.setString(2, text);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next();
+                return rs.getLong(1);
+            }
+        }
+    }
+
     @Override
     public Optional<CompanyView> company(String regNumber) {
         return withConnection(conn -> {
@@ -297,6 +326,49 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
                 try (ResultSet rs = ps.executeQuery()) {
                     return rs.next() ? Optional.of(JSON.readValue(rs.getString(1), CompanyView.class)) : Optional.empty();
                 }
+            }
+        });
+    }
+
+    @Override
+    public List<CompanyView> companies(Collection<String> regNumbers) {
+        if (regNumbers.isEmpty()) {
+            return List.of();
+        }
+        return withConnection(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT doc::text FROM companies WHERE reg_number = ANY (?)")) {
+                ps.setArray(1, conn.createArrayOf("text", regNumbers.toArray()));
+                List<CompanyView> found = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        found.add(JSON.readValue(rs.getString(1), CompanyView.class));
+                    }
+                }
+                return found;
+            }
+        });
+    }
+
+    @Override
+    public List<PartyLink> rolesOfParties(Collection<String> partyKeys, int limit) {
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        if (partyKeys.isEmpty()) {
+            return List.of();
+        }
+        return withConnection(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT party_key, reg_number, role_kind FROM party_roles"
+                    + " WHERE party_key = ANY (?) ORDER BY party_key, reg_number, role_kind LIMIT ?")) {
+                ps.setArray(1, conn.createArrayOf("text", partyKeys.toArray()));
+                ps.setInt(2, limit);
+                List<PartyLink> links = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        links.add(new PartyLink(rs.getString(1), rs.getString(2), rs.getString(3)));
+                    }
+                }
+                return links;
             }
         });
     }

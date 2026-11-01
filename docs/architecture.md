@@ -171,11 +171,11 @@ ingest  lake  normalize  diff  quality  index  pipes  serving-postgres   api (Sp
 | `diff` | `SnapshotDiff` (pure), canonical event JSON, event ids, the diff step (I/O) | `domain`, `lake` (snapshot loading), `storage` |
 | `quality` | run record and quality report (`ReportBuilder` pure, `QualityStep` I/O), asset checks (`Checks`, pure), retention (`PruneStep`) | `domain`, `lake`, `diff` |
 | `index` | index step: loads the snapshot, events and report of a capture, writes through `ServingWriter` only | `domain`, `serving`, `lake`, `diff`, `quality` |
-| `serving` | port: `ServingWriter`, `ServingQueries`, read records; abstract contract test suite (test fixtures) | `domain` |
-| `serving-postgres` | adapter: plain JDBC + HikariCP, Flyway migrations, `pg_trgm` + `unaccent` search | `domain`, `serving` |
+| `serving` | port: `ServingWriter`, `ServingQueries`, read records, `NetworkBuilder` (two-hop graph through the port); abstract contract test suite (test fixtures) | `domain` |
+| `serving-postgres` | adapter: plain JDBC + HikariCP, Flyway migrations, `pg_trgm` + `unaccent` search on `company_search`, `party_roles` for the network | `domain`, `serving` |
 | `pipes` | Dagster Pipes protocol 0.1: reads the injected context, writes materialization and check messages | Jackson only |
 | `cli` | one Picocli command per step; `Main` builds every object by hand | pipeline modules |
-| `api` | Spring Boot 4 controllers, DTO records, web config | `domain`, `serving` (adapter only in wiring config) |
+| `api` | Spring Boot 4.1.2 read API: controllers, DTO records, ProblemDetail errors, rate limit, CORS, health, OpenAPI, cache | `serving`, `serving-postgres` (only in `ServingConfig`) |
 
 Rules, checked by ArchUnit in the build:
 - Only `api` imports `org.springframework`.
@@ -410,30 +410,63 @@ with HikariCP; schema in Flyway migrations (`db/migration/serving`, history tabl
 | `companies` | registration number | search, company page: the `CompanyView` document as `jsonb`, plus `name_search`, status, legal family, `as_of`, `doc_hash` |
 | `events` | event id | timelines, changes feed; payload as `json` (keeps the canonical text); indexes on registration number + date and on date + type |
 | `runs` | run id | pipeline page; the quality report as `json` |
+| `party_roles` | party key + registration number + role | the company network: which companies a person (`person:<key>`) or entity (`company:<reg>`) holds roles in; derived from `companies.doc` by a trigger (V3) |
+| `company_search` | registration number | search: a narrow copy of name, unaccented name, legal form and status with the GIN trigram index, kept by a trigger (V4) |
 | `stats` | aggregate name + key | overview page (Milestone 6) |
 | `features` | feature name + key | insights page (Milestone 6) |
 
 Search: extensions `pg_trgm` and `unaccent`; a generated, unaccented, lower-case name column
 (through an `IMMUTABLE` wrapper function, because `unaccent()` itself is only `STABLE`)
-with a GIN trigram index. Matches are a registration number, a substring (`LIKE`, wildcards in
+with a GIN trigram index on the narrow `company_search` table. Matches are a registration number, a substring (`LIKE`, wildcards in
 the query escaped) or trigram similarity; ranked by similarity, an exact registration number
-first. "riga udens" finds `SIA "Rīgas ūdens"`; on the real register a cold query takes about
-1.5 s on the dev VM (the API adds a cache in Milestone 8).
+first. "riga udens" finds `SIA "Rīgas ūdens"`. Search first ran on `companies` itself: its
+heap holds every document (501 MB), and a common word ("nams", 1,901 hits) read about 8,600
+random heap blocks, 6 s cold on the dev VM. `company_search` is about 60 MB and stays in
+memory. A query whose substring matches more than 1,000 names (a common word such as
+"sabiedriba", 193,000 names) is "broad": it returns the substring matches only, ranked exact
+name, prefix, then shorter names, without trigram similarity over every match. Measured on the
+real register through the API: typical queries 0.03–0.4 s, the commonest word about 2.8 s
+(6 s before), and the API caches results for 10 minutes (Caffeine).
 
 Loads are upserts. A company row is only written when its content hash (the document without
 `as_of`) changed and the incoming capture is not older (`as_of`), so re-indexing a capture
 writes nothing and an older capture never rolls back a newer one. On the real data the first
 capture writes 489,963 companies (3.5 min); the next one writes only the 4 that changed.
 
-**API** (`api`, read-only, under `/api`): the endpoints in PLAN.md section 13.
-- DTO records separate from domain records.
-- Paging on list endpoints, validated query parameters.
-- Errors as RFC 7807 `ProblemDetail` from one `@RestControllerAdvice`.
-- Bucket4j rate limit per IP; Caffeine cache for stats and search.
-- CORS only for the Vite dev server.
-- Actuator health (with the database) and springdoc OpenAPI. The spec generates the
-  frontend's TypeScript types.
-- Persons appear only inside one company's response. No endpoint lists persons.
+**API** (`modules/api`, Spring Boot 4.1.2, read-only, `http://localhost:8080/api`; Swagger UI
+at `/api/docs`, spec at `/api/openapi.json`): the endpoints in PLAN.md section 13.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/search?q=&page=&size=` | search hits (cached 10 min) |
+| `GET /api/companies/{reg}` | company with officers, owners, beneficial owners |
+| `GET /api/companies/{reg}/events` | the company's events, newest capture first |
+| `GET /api/companies/{reg}/network` | two-hop graph: the company, its parties, their other companies, the parties of those; at most 30 other companies and 300 nodes (`truncated` says when cut) |
+| `GET /api/events?date=&type=` | changes feed |
+| `GET /api/stats` | companies per legal form, status and region; events per capture (cached) |
+| `GET /api/runs`, `GET /api/runs/{id}` | pipeline runs; one run with its quality report |
+| `GET /api/features/mass-addresses` | mass-registration addresses, best rank first |
+
+- Reads only through `ServingQueries`; only `ServingConfig` knows the adapter, and nothing in
+  the API may use `ServingWriter` (ArchUnit). The API never migrates: the index step does.
+- DTO records (`api.dto.Dtos`) separate from the serving views: `null` instead of `Optional`,
+  stored JSON (payloads, reports, feature rows) embedded as JSON.
+- Paging on list endpoints (`page` from 0, `size` 1–100), validated parameters (registration
+  number `\d{9}|\d{11}`, ISO dates, event types).
+- Errors as RFC 9457 `ProblemDetail` (`application/problem+json`): 400, 404, 429.
+- Bucket4j rate limit per client IP: a burst of 30, refilled at 120 per minute
+  (`API_RATE_LIMIT_*`); 429 with `Retry-After`. The socket address is the client: no proxy is
+  trusted.
+- CORS for the Vite dev server only (`API_CORS_ORIGINS`), GET and HEAD.
+- Actuator `health` with a `servingStore` indicator (runs, latest capture) and readiness
+  probe; springdoc OpenAPI. The spec generates the frontend's TypeScript types (Milestone 9).
+- Network graph: `NetworkBuilder` (plain Java, `serving` module) over two port methods,
+  `companies(regs)` and `rolesOfParties(keys, limit)`, backed by `party_roles` in Postgres.
+- Persons appear only in the context of one company: its page and its network graph
+  (PLAN.md section 12). No endpoint lists or exports persons in bulk; `personKey` is the
+  pseudonymous key that links one person across companies.
+- Real data on the VM: the API uses about 200 MB (`-Xmx256m`); the network of the company
+  whose party has the most roles answers in 0.05 s (105 nodes, truncated).
 
 **Frontend** (`web/`, React + TypeScript + Vite): Overview, Search, Company, Network,
 Changes, Pipeline and Insights pages. It talks only to the API, through TanStack Query and

@@ -92,3 +92,24 @@ trigram matching: relevance tuning, facets, synonyms, or much more data and traf
       Elasticsearch health indicator
 - [ ] Optional: dual write during a migration, then compare query results from both adapters
 - [ ] ADR: when and why serving moved (or not) to Elasticsearch
+
+## 5. Module folders grouped by who uses them
+
+Today every Java module sits flat under `modules/`. Gradle dependencies and the ArchUnit tests
+already enforce the boundaries (the API reads only through the `serving` port and never
+touches the pipeline), so this is about making the structure visible at a glance, not about
+correctness. Raised by the owner on 2026-11-01; kept for later.
+
+```
+modules/
+  shared/     domain, serving, serving-postgres          used by the CLI and the API
+  pipeline/   storage, ingest, lake, normalize, diff,    CLI only
+              quality, index, pipes, cli
+  api/        api                                        Spring Boot read API
+```
+
+- [ ] Move the directories; Gradle project names (`:domain`, `:cli`, ...) stay, only the
+      `projectDir` mapping in `settings.gradle.kts` changes
+- [ ] Update paths in the Makefile (`dagster-test` mounts `Checks.java`), docs and README
+- [ ] Optional: an ArchUnit or Gradle rule that `api` depends on `shared` modules only
+- [ ] Its own small PR, with no other changes, so the moves are easy to review

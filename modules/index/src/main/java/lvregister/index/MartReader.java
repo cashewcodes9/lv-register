@@ -7,15 +7,16 @@ import java.util.Map;
 import java.util.Optional;
 import lvregister.lake.DuckDb;
 import lvregister.serving.FeatureView;
+import lvregister.serving.ServingNames;
 import lvregister.serving.StatView;
 import lvregister.storage.ObjectStore;
 
 /** Reads the small dbt marts that the serving store needs (stats and features) from {@code lv-marts}. */
 public final class MartReader {
 
-    public static final String COMPANIES_STAT = "companies_by_form_status_region";
-    public static final String EVENTS_STAT = "events_per_capture";
-    public static final String MASS_ADDRESSES = "mass_registration_addresses";
+    public static final String COMPANIES_STAT = ServingNames.COMPANIES_STAT;
+    public static final String EVENTS_STAT = ServingNames.EVENTS_STAT;
+    public static final String MASS_ADDRESSES = ServingNames.MASS_ADDRESSES;
 
     private final DuckDb db;
     private final ObjectStore marts;

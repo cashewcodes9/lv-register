@@ -1,6 +1,8 @@
 package lvregister.serving;
 
 import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /** Read side of the serving store, used by the API. */
@@ -14,6 +16,16 @@ public interface ServingQueries {
 
     Optional<CompanyView> company(String regNumber);
 
+    /** The companies that exist among {@code regNumbers}, in no particular order. */
+    List<CompanyView> companies(Collection<String> regNumbers);
+
+    /**
+     * The roles that the given parties ({@link PartyLink#personKey}, {@link PartyLink#companyKey})
+     * hold, at most {@code limit}, ordered by party key and registration number. Joint owners
+     * count with each owner; persons without a key and foreign entities have no links.
+     */
+    List<PartyLink> rolesOfParties(Collection<String> partyKeys, int limit);
+
     /** Events of one company, newest capture first. */
     Page<EventView> eventsOf(String regNumber, int page, int size);
 
@@ -26,7 +38,7 @@ public interface ServingQueries {
     Optional<RunView> run(String runId);
 
     /** All rows of one stat, ordered by key. */
-    java.util.List<StatView> stats(String stat);
+    List<StatView> stats(String stat);
 
     /** Results of one feature, best rank first. */
     Page<FeatureView> feature(String feature, int page, int size);

@@ -7,7 +7,7 @@ export DOCKER_GID := $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo
 # Commands of the orchestration image, run in the dagster-code container.
 DAGSTER_CMD := $(COMPOSE) --profile core --profile orchestration exec -T dagster-code python -m lvregister_orchestration.commands
 
-.PHONY: help up down cli-image build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
+.PHONY: help up down cli-image api build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
 
 ## Show the targets
 help:
@@ -55,6 +55,10 @@ dbt-fixtures:
 dbt-docs:
 	$(COMPOSE) --profile core run --rm -p 127.0.0.1:8081:8081 --entrypoint sh dbt \
 	  -c "dbt docs generate && dbt docs serve --host 0.0.0.0 --port 8081 --no-browser"
+
+## Rebuild and restart the read API; Swagger UI on http://localhost:8080/api/docs
+api:
+	$(COMPOSE) --profile core up -d --build --wait api
 
 ## Rebuild the cli and orchestration images and (re)start Dagster; UI on http://localhost:3000
 dagster:

@@ -1,0 +1,57 @@
+# Read API (PLAN.md section 13). Environment variables as in .env.example.
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: never
+
+spring:
+  application:
+    name: lv-register-api
+  main:
+    banner-mode: off
+  mvc:
+    problemdetails:
+      enabled: true
+  cache:
+    cache-names: stats,search
+    caffeine:
+      spec: maximumSize=2000,expireAfterWrite=10m
+  threads:
+    virtual:
+      enabled: true
+
+lv:
+  serving:
+    backend: ${SERVING_BACKEND:postgres}
+    jdbc-url: ${SERVING_JDBC_URL:jdbc:postgresql://postgres:5432/lv_serving}
+    user: ${SERVING_DB_USER:lv_serving}
+    password: ${SERVING_DB_PASSWORD:lv-serving-local-only}
+    pool-size: ${API_DB_POOL_SIZE:4}
+  network:
+    max-companies: ${API_NETWORK_MAX_COMPANIES:30}
+    max-nodes: ${API_NETWORK_MAX_NODES:300}
+  rate-limit:
+    per-minute: ${API_RATE_LIMIT_PER_MINUTE:120}
+    burst: ${API_RATE_LIMIT_BURST:30}
+  cors:
+    # The Vite dev server only (Milestone 9); in production the API serves the frontend itself.
+    allowed-origins: ${API_CORS_ORIGINS:http://localhost:5173}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /api/openapi.json
+  swagger-ui:
+    path: /api/docs
+  paths-to-match: /api/**
