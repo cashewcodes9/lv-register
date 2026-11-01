@@ -613,7 +613,7 @@ Why shadcn/ui and d3.js: [FAQ](docs/FAQ.md#why-shadcnui-and-not-semantic-ui-whic
       6. dbt-duckdb over the lake instead of a warehouse database
       7. PostgreSQL as the serving store behind a port, Elasticsearch as a later adapter
 - [ ] Finish `docs/source-assessment.md`
-- [ ] Short demo GIF of the frontend
+- [x] Short demo GIF of the frontend (`docs/images/demo.gif`, names pixelated)
 
 After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch items there).
 

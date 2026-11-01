@@ -21,6 +21,7 @@ decision is written down. The plan is [PLAN.md](../PLAN.md), the design is
 - [Why do the colours look like North Data, but not the name?](#why-do-the-colours-look-like-north-data-but-not-the-name)
 - [Why does the network start so small?](#why-does-the-network-start-so-small)
 - [What are marts?](#what-are-marts)
+- [Why are the overview and insights pages fast, when the database holds 490,000 companies?](#why-are-the-overview-and-insights-pages-fast-when-the-database-holds-490000-companies)
 - [Why SeaweedFS, and why the AWS SDK if nothing runs on AWS?](#why-seaweedfs-and-why-the-aws-sdk-if-nothing-runs-on-aws)
 - [Why weekly captures, and how are captures dated?](#why-weekly-captures-and-how-are-captures-dated)
 
@@ -312,6 +313,46 @@ marts (lv-marts)      final tables per use                       ("what we want 
 Marts live in `s3://lv-marts` for analysis and tests; the index step copies the small ones
 the frontend needs into PostgreSQL, so the API never scans 490,000 companies per request. See
 [PLAN.md section 10](../PLAN.md#10-value-features-pick-1-for-mvp-more-if-time).
+
+## Why are the overview and insights pages fast, when the database holds 490,000 companies?
+
+The answers are computed once per capture, not on every request. dbt builds them as marts,
+and the index step copies the small results into PostgreSQL. The API then reads a few hundred
+or a few thousand finished rows instead of aggregating every company.
+
+```
+once a week (pipeline)                                  on every request (API)
+lake ─► dbt: aggregate 490,000 companies ─► marts ─► index ─► stats / features ─► GET /api/stats
+         (DuckDB, columnar Parquet)       (S3)       (copy)    3,001 / 330 rows    GET /api/features/…
+```
+
+Measured on the real register (2026-11-01, PostgreSQL 18 on the 1-CPU VM, median of 3):
+
+| Question | Read from the precomputed table | Computed live in PostgreSQL | Faster by |
+|---|---:|---:|---:|
+| Companies by legal form, status and region (overview) | 0.5 ms | 9.7 s | about 18,000× |
+| Mass-registration addresses, first 20 (insights) | 0.17 ms | 38.6 s | about 220,000× |
+
+The live queries group the same data straight from `companies`: 505 MB of JSON documents,
+read in full each time. Through the API, with JSON encoding and HTTP, the pages answer in 0.1–1 s
+on the first call and come from the API's 10-minute cache after that.
+
+Why it works:
+
+- **The data changes once a week.** Answers that only change when a capture is indexed
+  don't need to be recomputed per request.
+- **DuckDB is built for this kind of query.** It scans columnar Parquet, so a
+  `GROUP BY` over the whole register takes seconds once a week, inside the pipeline, where
+  nobody waits for it.
+- **Tested before anyone sees it.** dbt tests the marts (unique registration numbers and
+  address ids, accepted status and legal-family values, the Java/SQL diff parity), and the
+  `counts_match_marts` check compares the serving store with them.
+- **PostgreSQL still serves.** The API doesn't read the marts directly. It reads the copies in
+  PostgreSQL, behind the `serving` port, like everything else.
+
+What can't be precomputed still goes to PostgreSQL directly, with indexes: search (trigram
+index, see [search-performance.md](search-performance.md)), one company by registration
+number (primary key), its events, and its network (`party_roles`).
 
 ## Why SeaweedFS, and why the AWS SDK if nothing runs on AWS?
 
