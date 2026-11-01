@@ -20,9 +20,11 @@ import java.util.stream.Stream;
 import javax.sql.DataSource;
 import lvregister.serving.CompanyView;
 import lvregister.serving.EventView;
+import lvregister.serving.FeatureView;
 import lvregister.serving.Page;
 import lvregister.serving.RunView;
 import lvregister.serving.SearchHit;
+import lvregister.serving.StatView;
 import lvregister.serving.ServingQueries;
 import lvregister.serving.ServingWriter;
 import org.flywaydb.core.Flyway;
@@ -163,6 +165,53 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
             return null;
         });
         return new Upserted(counts[0], counts[1]);
+    }
+
+    @Override
+    public void replaceStats(String stat, List<StatView> rows) {
+        replaceAll("DELETE FROM stats WHERE stat = ?", stat,
+                "INSERT INTO stats (stat, key, dimensions, value) VALUES (?, ?, ?::jsonb, ?)", rows, (ps, row) -> {
+                    ps.setString(1, stat);
+                    ps.setString(2, row.key());
+                    ps.setString(3, JSON.writeValueAsString(row.dimensions()));
+                    ps.setLong(4, row.value());
+                });
+    }
+
+    @Override
+    public void replaceFeature(String feature, List<FeatureView> rows) {
+        replaceAll("DELETE FROM features WHERE feature = ?", feature,
+                "INSERT INTO features (feature, key, rank, doc) VALUES (?, ?, ?, ?::json)", rows, (ps, row) -> {
+                    ps.setString(1, feature);
+                    ps.setString(2, row.key());
+                    ps.setInt(3, row.rank());
+                    ps.setString(4, row.json());
+                });
+    }
+
+    private interface Binder<T> {
+        void bind(PreparedStatement ps, T row) throws SQLException;
+    }
+
+    /** Deletes the rows of one name and inserts the new ones, in one transaction. */
+    private <T> void replaceAll(String delete, String name, String insert, List<T> rows, Binder<T> binder) {
+        withConnection(conn -> {
+            conn.setAutoCommit(false);
+            try (PreparedStatement del = conn.prepareStatement(delete); PreparedStatement ins = conn.prepareStatement(insert)) {
+                del.setString(1, name);
+                del.executeUpdate();
+                for (T row : rows) {
+                    binder.bind(ins, row);
+                    ins.addBatch();
+                }
+                ins.executeBatch();
+                conn.commit();
+            } catch (SQLException | RuntimeException e) {
+                conn.rollback();
+                throw e;
+            }
+            return null;
+        });
     }
 
     @Override
@@ -337,6 +386,52 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
                     return rs.next() ? Optional.of(run(rs)) : Optional.empty();
                 }
             }
+        });
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<StatView> stats(String stat) {
+        return withConnection(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT dimensions::text, value FROM stats WHERE stat = ? ORDER BY key")) {
+                ps.setString(1, stat);
+                List<StatView> rows = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        rows.add(new StatView(stat, JSON.readValue(rs.getString(1), java.util.Map.class), rs.getLong(2)));
+                    }
+                }
+                return rows;
+            }
+        });
+    }
+
+    @Override
+    public Page<FeatureView> feature(String feature, int page, int size) {
+        Page.check(page, size);
+        return withConnection(conn -> {
+            long total;
+            try (PreparedStatement ps = conn.prepareStatement("SELECT count(*) FROM features WHERE feature = ?")) {
+                ps.setString(1, feature);
+                try (ResultSet rs = ps.executeQuery()) {
+                    rs.next();
+                    total = rs.getLong(1);
+                }
+            }
+            List<FeatureView> items = new ArrayList<>();
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT key, rank, doc::text FROM features WHERE feature = ? ORDER BY rank, key LIMIT ? OFFSET ?")) {
+                ps.setString(1, feature);
+                ps.setInt(2, size);
+                ps.setLong(3, (long) page * size);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        items.add(new FeatureView(feature, rs.getString(1), rs.getInt(2), rs.getString(3)));
+                    }
+                }
+            }
+            return new Page<>(items, page, size, total);
         });
     }
 
