@@ -5,7 +5,7 @@ export HOST_GID := $(shell id -g)
 # Group of the Docker socket, so Testcontainers in the build container may use it.
 export DOCKER_GID := $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo 0)
 # Commands of the orchestration image, run in the dagster-code container.
-DAGSTER_CMD := $(COMPOSE) --profile orchestration exec -T dagster-code python -m lvregister_orchestration.commands
+DAGSTER_CMD := $(COMPOSE) --profile core --profile orchestration exec -T dagster-code python -m lvregister_orchestration.commands
 
 .PHONY: help up down cli-image build test gradle run dbt-build dbt-fixtures dbt-docs dagster capture-now capture-off capture-on dagster-test status duckdb fetch-capture
 
@@ -69,11 +69,11 @@ capture-now:
 
 ## Stop the weekly capture schedule (the stack keeps running)
 capture-off:
-	$(COMPOSE) --profile orchestration exec -T dagster-daemon dagster schedule stop weekly_capture -w /opt/dagster/home/workspace.yaml
+	$(COMPOSE) --profile core --profile orchestration exec -T dagster-daemon dagster schedule stop weekly_capture -w /opt/dagster/home/workspace.yaml
 
 ## Start the weekly capture schedule again (a gap is not filled: the next diff spans it)
 capture-on:
-	$(COMPOSE) --profile orchestration exec -T dagster-daemon dagster schedule start weekly_capture -w /opt/dagster/home/workspace.yaml
+	$(COMPOSE) --profile core --profile orchestration exec -T dagster-daemon dagster schedule start weekly_capture -w /opt/dagster/home/workspace.yaml
 
 ## pytest of the Dagster definitions, in the orchestration image (its baked dbt manifest)
 dagster-test:

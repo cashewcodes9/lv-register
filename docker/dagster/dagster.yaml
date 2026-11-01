@@ -5,6 +5,8 @@ storage:
     postgres_db:
       hostname: postgres
       port: 5432
+      # SQLAlchemy 2.1 defaults to psycopg 3; dagster-postgres ships psycopg2.
+      scheme: postgresql+psycopg2
       db_name: dagster
       username: dagster
       password:

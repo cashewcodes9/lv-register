@@ -196,6 +196,8 @@ services:
       LV_LAKE_ROOT: s3://${S3_BUCKET_LAKE:-lv-lake}
     volumes:
       - dagster-storage:/opt/dagster/storage
+      - ./docker/dagster/dagster.yaml:/opt/dagster/home/dagster.yaml:ro
+      - ./docker/dagster/workspace.yaml:/opt/dagster/home/workspace.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "${DOCKER_GID:-0}"
@@ -220,6 +222,8 @@ services:
       DAGSTER_DB_PASSWORD: ${DAGSTER_DB_PASSWORD:-dagster-local-only}
     volumes:
       - dagster-storage:/opt/dagster/storage
+      - ./docker/dagster/dagster.yaml:/opt/dagster/home/dagster.yaml:ro
+      - ./docker/dagster/workspace.yaml:/opt/dagster/home/workspace.yaml:ro
     ports:
       - "127.0.0.1:3000:3000"
     healthcheck:
@@ -241,6 +245,8 @@ services:
       DAGSTER_DB_PASSWORD: ${DAGSTER_DB_PASSWORD:-dagster-local-only}
     volumes:
       - dagster-storage:/opt/dagster/storage
+      - ./docker/dagster/dagster.yaml:/opt/dagster/home/dagster.yaml:ro
+      - ./docker/dagster/workspace.yaml:/opt/dagster/home/workspace.yaml:ro
     healthcheck:
       test: ["CMD", "dagster-daemon", "liveness-check"]
       interval: 30s
