@@ -17,9 +17,19 @@ spring:
     cache-names: stats,search
     caffeine:
       spec: maximumSize=2000,expireAfterWrite=10m
+  # Platform threads, not virtual threads: on the 1-CPU VM the virtual-thread scheduler has one
+  # carrier thread, and class loading pins it, which deadlocked the API (2026-11-01, thread dump
+  # in EXECUTION.md). Virtual threads bring nothing at this load.
   threads:
     virtual:
-      enabled: true
+      enabled: false
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          # index.html and other unhashed files: always revalidate, so a browser never keeps an
+          # index.html that points to chunks of an older build. /assets/** see WebConfig.
+          no-cache: true
 
 lv:
   serving:

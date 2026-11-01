@@ -117,4 +117,17 @@ class ApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(file).as("web/openapi.json is stale: run make openapi").exists();
         org.assertj.core.api.Assertions.assertThat(java.nio.file.Files.readString(file)).isEqualTo(normalized);
     }
+
+    @Autowired
+    org.springframework.core.env.Environment environment;
+
+    /**
+     * Virtual threads deadlocked the API on the 1-CPU VM (one carrier thread, pinned by class
+     * loading). They must stay off unless that is solved (application.yml).
+     */
+    @Test
+    void requestsRunOnPlatformThreads() throws Exception {
+        org.assertj.core.api.Assertions.assertThat(environment.getProperty("spring.threads.virtual.enabled", Boolean.class)).isFalse();
+        org.assertj.core.api.Assertions.assertThat(environment.getProperty("spring.web.resources.cache.cachecontrol.no-cache", Boolean.class)).isTrue();
+    }
 }
