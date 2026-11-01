@@ -43,11 +43,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
+ * The CLI end to end on synthetic data: download → lake → diff → quality → index for two
  * captures, against SeaweedFS, PostgreSQL and a fake data.gov.lv. The second capture runs as
  * Dagster would: one step per process under Pipes, plus prune. Then the log output (as the JSON
  * encoder writes it) and the Pipes messages (Dagster metadata) must not contain any person data
  * (PLAN.md section 12).
- * JSON encoder writes it) must not contain any person data (PLAN.md section 12).
  */
 class PipelineLogsTest {
 
