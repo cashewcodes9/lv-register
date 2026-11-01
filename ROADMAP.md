@@ -63,7 +63,6 @@ Thresholds start as listed and are tuned on real data.
 - [ ] Frontend Pipeline page links each run to its Grafana view
 - [ ] ADR: observability stack (OpenTelemetry, Grafana, Prometheus, Loki, Tempo)
 
-
 ## 2. More data: the sources North Data combines, for Latvia
 
 North Data's [coverage page](https://www.northdata.com/_coverage) shows the pattern per
