@@ -5,7 +5,7 @@ export HOST_GID := $(shell id -g)
 # Group of the Docker socket, so Testcontainers in the build container may use it.
 export DOCKER_GID := $(shell stat -c %g /var/run/docker.sock 2>/dev/null || echo 0)
 
-.PHONY: help up down build test gradle run status duckdb fetch-capture
+.PHONY: help up down build test gradle run dbt-build dbt-fixtures dbt-docs status duckdb fetch-capture
 
 ## Show the targets
 help:
@@ -35,6 +35,20 @@ gradle:
 run:
 	@test -n "$(DATE)" || { echo "usage: make run DATE=YYYY-MM-DD"; exit 2; }
 	$(COMPOSE) --profile core run --rm --build cli run --date $(DATE)
+
+## dbt seed, run and test over the real lake; marts to s3://lv-marts
+dbt-build:
+	$(COMPOSE) --profile core run --rm dbt build
+
+## dbt build on the committed fixtures (transform/fixtures/lake), no S3 needed; used by CI
+dbt-fixtures:
+	$(COMPOSE) --profile core run --rm --no-deps -e DBT_TARGET=fixtures -e LV_LAKE_ROOT=/work/transform/fixtures/lake \
+	  dbt build --vars '{mass_address_min_companies: 1}'
+
+## dbt docs with the lineage graph on http://localhost:8081
+dbt-docs:
+	$(COMPOSE) --profile core run --rm -p 127.0.0.1:8081:8081 --entrypoint sh dbt \
+	  -c "dbt docs generate && dbt docs serve --host 0.0.0.0 --port 8081 --no-browser"
 
 ## Service state, bucket usage and database sizes
 status:

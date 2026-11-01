@@ -1,0 +1,68 @@
+version: 2
+
+models:
+  - name: dim_companies
+    description: Latest state of every company (one row per registration number).
+    columns:
+      - name: reg_number
+        tests: [unique, not_null]
+      - name: name
+        tests: [not_null]
+      - name: status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ACTIVE, IN_LIQUIDATION, INSOLVENT, LEGAL_PROTECTION, TERMINATED, REORGANIZED]
+      - name: legal_family
+        tests:
+          - accepted_values:
+              arguments:
+                values: [LLC, CORPORATION, SOLE_PROPRIETORSHIP, GENERAL_PARTNERSHIP, LIMITED_PARTNERSHIP, COOPERATIVE,
+                         ASSOCIATION, FOUNDATION, BRANCH, REPRESENTATION, PUBLIC_ENTERPRISE, RELIGIOUS_ORGANISATION,
+                         POLITICAL_ORGANISATION, OTHER]
+  - name: fct_company_events
+    description: Every change event (from the Java diff), one row per event.
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+      - name: event_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: [REGISTERED, NAME_CHANGED, ADDRESS_CHANGED, LEGAL_FORM_CHANGED, MANAGEMENT_CHANGED,
+                         OWNERSHIP_CHANGED, STATUS_CHANGED, TERMINATED, MISSING_FROM_SNAPSHOT]
+      - name: reg_number
+        tests: [not_null]
+  - name: agg_companies_by_form_status_region
+    description: Company counts of the latest capture per legal family, form, status and region.
+  - name: agg_events_per_capture
+    description: Event counts per capture and type.
+  - name: feat_mass_registration_addresses
+    description: Addresses with an unusual number of active companies (value feature 1).
+    columns:
+      - name: vzd_id
+        tests: [unique, not_null]
+
+exposures:
+  - name: api
+    label: lv-register API
+    type: application
+    maturity: low
+    description: Spring Boot read API (Milestone 8); serves the marts through the serving store.
+    owner: {name: lv-register}
+    depends_on:
+      - ref('dim_companies')
+      - ref('fct_company_events')
+      - ref('agg_companies_by_form_status_region')
+      - ref('agg_events_per_capture')
+      - ref('feat_mass_registration_addresses')
+  - name: frontend
+    label: lv-register frontend
+    type: application
+    maturity: low
+    description: React app (Milestone 9) - overview, changes and insights pages.
+    owner: {name: lv-register}
+    depends_on:
+      - ref('agg_companies_by_form_status_region')
+      - ref('agg_events_per_capture')
+      - ref('feat_mass_registration_addresses')
