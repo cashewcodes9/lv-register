@@ -7,3 +7,9 @@ data/
 .env
 *.duckdb
 node_modules/
+transform/target/
+transform/logs/
+transform/{{*
+**/__pycache__/
+**/.pytest_cache/
+.cache/

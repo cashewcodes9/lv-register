@@ -2,6 +2,7 @@
 
 You are helping me build a portfolio project for the North Data "Modern Java Developer"
 application (Hamburg). Follow this plan milestone by milestone. Ask me before changing scope.
+The reasons behind the main decisions are collected in [docs/FAQ.md](docs/FAQ.md).
 
 Goal: show that I can take a country North Data does not cover yet, understand its sources on
 my own, and turn them into clean, tested, event-based company data, with a React frontend to
@@ -35,8 +36,8 @@ This project re-applies the architecture of my Python project Oversee
 before starting. Keep these patterns:
 
 - Raw files cached per capture, fingerprinted with SHA-256, skipped if already processed.
-- S3-compatible object storage (SeaweedFS locally) for raw files and the lake. The same code
-  works against AWS S3 by changing configuration only.
+- S3-compatible object storage (SeaweedFS) for raw files and the lake. The code speaks the S3
+  API to the endpoint in `S3_ENDPOINT`, so another S3-compatible store is a configuration change.
 - Hive-partitioned Parquet lake: `s3://lv-lake/<file>/date=YYYY-MM-DD/<file>.parquet`,
   unfiltered, with the source SHA-256 in the Parquet key-value metadata. DuckDB reads and
   writes it through `httpfs`.
@@ -83,9 +84,9 @@ logic lives in Java.
 | CLI | Picocli (one subcommand per pipeline step, `--date` option) |
 | HTTP API | Spring Boot 4 web, Bucket4j rate limiting, Actuator, springdoc-openapi (the release line for Spring Boot 4), Caffeine cache, ProblemDetail errors |
 | JSON | Jackson 3 (`tools.jackson`, the Spring Boot 4 default), records support; the same version in pipeline modules |
-| CSV | FastCSV or Apache Commons CSV |
+| CSV | parsed only by DuckDB (`read_csv`) in the lake step; no Java CSV library. normalize reads Parquet rows |
 | HTTP client | java.net.http.HttpClient |
-| Object storage | SeaweedFS (S3 API) locally, AWS S3 compatible. Java uses AWS SDK v2 `S3Client` with endpoint override and path-style access |
+| Object storage | SeaweedFS (S3 API). Java uses the AWS SDK v2 `S3Client` as the S3 protocol client, with the required `S3_ENDPOINT` override and path-style access; no AWS services |
 | Lake | Parquet files written and queried with DuckDB 1.4.x LTS (JDBC, `httpfs` extension). Pinned to 1.4: DuckDB 2.0 binaries need AVX, which the dev VM lacks (source assessment 4.9) |
 | Events | JSON Lines per capture in S3 |
 | SQL models and tests | dbt-core + dbt-duckdb: staging, intermediate and mart models over the lake, marts written as Parquet to S3 |
@@ -96,7 +97,7 @@ logic lives in Java.
 | Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
 | Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker, git and make |
 | CI | GitHub Actions: backend build + test, dbt parse + build on fixtures, Dagster definitions load, frontend lint + build, Docker image builds |
-| Frontend | React + TypeScript (Vite), TanStack Query for data fetching, Recharts for charts, react-force-graph or d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
+| Frontend | React + TypeScript (Vite), shadcn/ui components (Radix + Tailwind CSS, copied into `web/`; owner decision 2026-11-01), TanStack Query for data fetching, shadcn charts (Recharts) for the stats, d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
 
 Why this split: the pipeline is batch code where a framework adds nothing, so it stays plain
 Java and runs via Picocli. The React-facing API needs middleware (rate limiting, CORS,
@@ -177,7 +178,7 @@ project builds the same on any machine and in CI.
 | `build` | `eclipse-temurin:25-jdk` | runs the Gradle wrapper: `./gradlew build`, tests. Gradle cache in a named volume |
 | `cli` | `Dockerfile` target `cli` (JRE 25 + CLI jar) | runs pipeline steps; launched by Dagster or `docker compose run` |
 | `api` | `Dockerfile` target `api` (JRE 25 + Spring Boot jar with `web/dist`) | API and frontend on one port |
-| `web-dev` | `node:22` (LTS) | Vite dev server with hot reload; `npm` commands; `node_modules` in a named volume |
+| `web-dev` | `node:24.22.2-alpine` (LTS) | Vite dev server with hot reload (profile `dev`); `npm` commands run in the `web` tool service; `node_modules` in `web/` (git-ignored) |
 | `dagster-code` | `orchestration/Dockerfile` (Python, Dagster, dbt-duckdb, dbt project) | Dagster code location (gRPC); launches `cli` containers through the Docker socket |
 | `dagster-webserver` | same image | Dagster UI (:3000): asset graph, runs, backfills, checks |
 | `dagster-daemon` | same image | schedules, sensors, run queue, retries |
@@ -206,6 +207,8 @@ project builds the same on any machine and in CI.
 
 ### 6.2 Capture schedule, retention and on/off
 
+Why weekly and how captures are dated: [FAQ](docs/FAQ.md#why-weekly-captures-and-how-are-captures-dated).
+
 This is a demo, so it captures **once a week**, not every day.
 
 **Captures:**
@@ -232,7 +235,7 @@ This is a demo, so it captures **once a week**, not every day.
 | Events, reports | forever | small: only changes and counts |
 | Marts | rebuilt each run | derived |
 | Serving (PostgreSQL) | latest company state, all events, all runs | upserts, grows only with events |
-| Dagster run history | 90 days | Dagster's run retention setting |
+| Dagster run history | 90 days | `dagster_housekeeping` job (OSS Dagster has a retention setting only for ticks) |
 
 - `prune` runs as the last step of every capture. It never deletes the latest capture, or a
   snapshot whose events have not been written.
@@ -266,7 +269,7 @@ lv-register/
   .env.example
   modules/
     domain/       records, sealed types, no I/O, no dependencies
-    storage/      S3 object store (AWS SDK v2) and local-directory implementation
+    storage/      S3 object store for SeaweedFS (AWS SDK v2 as protocol client) and local directory
     ingest/       download, sha256 manifest, raw cache
     lake/         Parquet snapshots via DuckDB JDBC (httpfs)
     normalize/    lake rows -> domain, legal form + status mapping, dropped-row counts
@@ -369,7 +372,8 @@ Compare the previous capture (A) with the current one (B), keyed by registration
 
 ## 9. Idempotency and correctness
 
-- Raw layer: a file with the same sha256 as one already stored is skipped.
+- Raw layer: a file already in the capture's manifest (with an object of the recorded size) is
+  not downloaded again; the manifest keeps its sha256. A capture is fixed once written.
 - Lake: writing the same day again with the same source sha256 is a no-op.
 - Event ids are deterministic: `sha256(regNumber | eventType | snapshotDate | canonicalPayload)`.
   Re-running a capture writes the same ids.
@@ -487,7 +491,9 @@ Pages:
 Rules:
 - Data fetching with TanStack Query only, against the generated API types.
 - No mock data once the API exists. Build pages against real API responses.
-- Keep styling simple and clean. Function over decoration.
+- Keep styling simple and clean. Function over decoration. UI components from shadcn/ui
+  (Radix primitives + Tailwind CSS), kept in `web/src/components/ui`; no unmaintained
+  libraries (Semantic UI was considered and dropped: no release since 2022/2023, no React 19).
 
 ## 15. Milestones
 
@@ -517,72 +523,82 @@ Rules:
 - [x] Logback JSON logging with run id in MDC
 
 ### Milestone 3: Storage + ingest + lake + normalize
-- [ ] `storage` module: S3 object store against SeaweedFS (Testcontainers) and local directory
-- [ ] Downloader with sha256 manifest in `s3://lv-raw`, skip if unchanged, write via temp key
-- [ ] Lake writer: CSV to Parquet via DuckDB `httpfs`, source sha in metadata
-- [ ] Normalizers per file returning `Cleaned<T>`
-- [ ] Legal form and status mapping with tests
+- [x] `storage` module: S3 object store against SeaweedFS (Testcontainers) and local directory
+- [x] Downloader with sha256 manifest in `s3://lv-raw`, skip if unchanged, write via temp key
+- [x] Lake writer: CSV to Parquet via DuckDB `httpfs`, source sha in metadata
+- [x] Normalizers per file returning `Cleaned<T>`
+- [x] Legal form and status mapping with tests
 
 ### Milestone 4: Diff + events
-- [ ] Snapshot diff for all event types in section 8
-- [ ] Deterministic event ids
-- [ ] Property tests from section 9
+- [x] Snapshot diff for all event types in section 8
+- [x] Deterministic event ids
+- [x] Property tests from section 9
 - [ ] Collect two or more real captures (`make capture-now` a few days apart) and produce real
-      events
-- [ ] Spot-check 5 real events against info.ur.gov.lv
+      events (so far: 2026-10-31 and 2026-11-01, one day apart, 4 real events; open until a
+      capture a few days later)
+- [ ] Spot-check 5 real events against info.ur.gov.lv (open: needs more captures; the portal
+      needs a browser)
 
 ### Milestone 5: Quality + index
-- [ ] Run record and quality report (section 11)
-- [ ] `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite;
+- [x] Run record and quality report (section 11)
+- [x] `serving` port (`ServingWriter`, `ServingQueries`) with a contract test suite;
       `serving-postgres`: Flyway schema for companies, events and runs (`pg_trgm`, `unaccent`)
-- [ ] Indexer with upserts through the port; Postgres adapter passes the contract tests (Testcontainers)
-- [ ] Testcontainers working from the `build` container
-- [ ] Test: no person data in CLI logs on a fixture run
+- [x] Indexer with upserts through the port; Postgres adapter passes the contract tests (Testcontainers)
+- [x] Testcontainers working from the `build` container (done in Milestone 3)
+- [x] Test: no person data in CLI logs on a fixture run
 
 ### Milestone 6: dbt
-- [ ] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
-- [ ] Sources with tests; staging and intermediate models per MVP file
-- [ ] Marts: `dim_companies`, `fct_company_events`, stats aggregates, value feature
+Why dbt, and what marts are: [FAQ](docs/FAQ.md#what-does-dbt-add).
+
+- [x] dbt project in `transform/` with dbt-duckdb reading the lake and events from S3
+- [x] Sources with tests; staging and intermediate models per MVP file
+- [x] Marts: `dim_companies`, `fct_company_events`, stats aggregates, value feature
       (section 10), written as Parquet to `s3://lv-marts`
-- [ ] SQL diff model and the parity test against the Java events (section 9)
-- [ ] Singular tests from section 9; exposures for the API and frontend
-- [ ] `make dbt-build`, `make dbt-docs` (lineage graph)
-- [ ] Indexer loads stats and feature marts into the serving store
+- [x] SQL diff model and the parity test against the Java events (section 9)
+- [x] Singular tests from section 9; exposures for the API and frontend
+- [x] `make dbt-build`, `make dbt-docs` (lineage graph)
+- [x] Indexer loads stats and feature marts into the serving store
 
 ### Milestone 7: Dagster orchestration
-- [ ] `orchestration/` Python project and image; `dagster` database in the `postgres` service;
+Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
+
+- [x] `orchestration/` Python project and image; `dagster` database in the `postgres` service;
       compose services `dagster-code`, `dagster-webserver`, `dagster-daemon`
-- [ ] `pipes` module: the CLI reports materializations, metadata and check results to Dagster
-- [ ] Assets with one partition per capture date: `ur_raw_files` ─► `lake_snapshot` ─►
+- [x] `pipes` module: the CLI reports materializations, metadata and check results to Dagster
+- [x] Assets with one partition per capture date: `ur_raw_files` ─► `lake_snapshot` ─►
       `company_events` (reads the previous capture from the lake) ─► `quality_report` ─►
       dbt models ─► `search_index` ─► `retention`
-- [ ] Java steps launched in the `cli` image through Dagster Pipes; dbt via dagster-dbt with
+- [x] Java steps launched in the `cli` image through Dagster Pipes; dbt via dagster-dbt with
       dbt tests as asset checks
-- [ ] Asset checks from the quality report (drop share, orphans, unmapped values, event
+- [x] Asset checks from the quality report (drop share, orphans, unmapped values, event
       spikes, storage size); blocking checks stop downstream assets
-- [ ] `weekly_capture` schedule (day and time from Milestone 1), freshness check, run failure
+- [x] `weekly_capture` schedule (day and time from Milestone 1), freshness check, run failure
       sensor, retry policy with backoff for `download`
-- [ ] `make capture-now`, `make capture-off`, `make capture-on`, `make status` (section 6.2)
-- [ ] `prune` step and retention settings in `.env`; Dagster run retention 90 days
-- [ ] Reprocessing past captures from the lake (not from UR) works from the UI
-- [ ] pytest: definitions load, asset graph and partition mapping are as expected
+- [x] `make capture-now`, `make capture-off`, `make capture-on`, `make status` (section 6.2)
+- [x] `prune` step and retention settings in `.env`; Dagster run retention 90 days
+- [x] Reprocessing past captures from the lake (not from UR) works from the UI
+- [x] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
-- [ ] Spring Boot 4 app in `api/`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
-- [ ] All endpoints from section 13
-- [ ] DTO records, validation, paging, ProblemDetail errors
-- [ ] Bucket4j rate limit, CORS for Vite dev server
-- [ ] Actuator health, springdoc-openapi, Caffeine cache
-- [ ] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against a PostgreSQL
+Design choices and measurements: [FAQ](docs/FAQ.md#how-is-the-api-built-and-why-these-choices).
+
+- [x] Spring Boot 4 app in `modules/api`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
+- [x] All endpoints from section 13
+- [x] DTO records, validation, paging, ProblemDetail errors
+- [x] Bucket4j rate limit, CORS for Vite dev server
+- [x] Actuator health, springdoc-openapi, Caffeine cache
+- [x] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against a PostgreSQL
       Testcontainer
 
 ### Milestone 9: React frontend
-- [ ] Vite + React + TypeScript app in `web/`
-- [ ] TypeScript types generated from the OpenAPI spec
-- [ ] All pages from section 14
-- [ ] Frontend lint + build in CI
-- [ ] `web-dev` compose service with hot reload against the API
-- [ ] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
+Why shadcn/ui and d3.js: [FAQ](docs/FAQ.md#why-shadcnui-and-not-semantic-ui-which-north-data-uses).
+
+- [x] Vite + React + TypeScript app in `web/`
+- [x] TypeScript types generated from the OpenAPI spec
+- [x] All pages from section 14
+- [x] Frontend lint + build in CI
+- [x] `web-dev` compose service with hot reload against the API
+- [x] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
       command
 
 ### Milestone 10: Polish
@@ -597,7 +613,7 @@ Rules:
       6. dbt-duckdb over the lake instead of a warehouse database
       7. PostgreSQL as the serving store behind a port, Elasticsearch as a later adapter
 - [ ] Finish `docs/source-assessment.md`
-- [ ] Short demo GIF of the frontend
+- [x] Short demo GIF of the frontend (`docs/images/demo.gif`, names pixelated)
 
 After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch items there).
 

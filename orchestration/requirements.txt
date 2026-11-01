@@ -1,0 +1,14 @@
+# Python dependencies of the orchestration image: dbt (Milestone 6) and Dagster (Milestone 7).
+# Exact versions; the image is the lock (owner decision 2026-11-01).
+# duckdb stays on the 1.4 LTS line, as the Java side: 2.0 binaries need AVX.
+duckdb==1.4.5
+dbt-core==1.12.6
+dbt-duckdb==1.11.1
+# Dagster core and its integrations are released together (1.13.x with 0.29.x).
+dagster==1.13.28
+dagster-pipes==1.13.28
+dagster-webserver==1.13.28
+dagster-postgres==0.29.28
+dagster-docker==0.29.28
+dagster-dbt==0.29.28
+pytest==9.2.0

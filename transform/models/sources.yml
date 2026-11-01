@@ -1,0 +1,34 @@
+version: 2
+
+# The lake: one Parquet file per UR file and capture, every column VARCHAR (written by the
+# Java lake step). capture_date comes from the date= partition; file_row_number keeps the
+# source order.
+sources:
+  - name: lake
+    description: UR files as captured, one partition per capture date (s3://lv-lake).
+    meta:
+      external_location: >-
+        (select * exclude (date), cast(date as date) as capture_date
+         from read_parquet('{{ env_var('LV_LAKE_ROOT', 's3://lv-lake') }}/{name}/*/{name}.parquet',
+                           hive_partitioning = true, file_row_number = true, union_by_name = true))
+    tables:
+      - name: register
+        description: Every entity ever registered.
+        columns:
+          - name: regcode
+            tests: [not_null]
+          - name: capture_date
+            tests: [not_null]
+      - name: officers
+        columns:
+          - name: at_legal_entity_registration_number
+            tests: [not_null]
+      - name: members
+      - name: members_joint_owners
+      - name: stockholders
+      - name: stockholders_joint_owners
+      - name: beneficial_owners
+      - name: equity_capitals
+      - name: liquidations
+      - name: insolvency_legal_person_proceeding
+      - name: reorganizations

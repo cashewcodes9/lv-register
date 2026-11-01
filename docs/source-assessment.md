@@ -84,7 +84,7 @@ in-reach source, not "a different authority".
 religious 1,375 · `T` arbitration courts 228 · `P` political parties 111 · `O` political
 organisations 71 · `A` trade unions 19 · `E` EEIG 5.
 
-`type` (legal form), 61 codes, total / active:
+`type` (legal form), 54 codes (recounted in Milestone 3, section 9), total / active:
 
 | Code | Latvian | Total | Active | Proposed family |
 |---|---|---:|---:|---|
@@ -306,3 +306,62 @@ birth dates, nationality, residence). Latvia publishes BOs openly; after the CJE
 22 November 2022 (C‑37/20, C‑601/20) several EU countries closed public BO access, and EU
 AML rules (AMLD6) move BO access to a legitimate-interest model, so this may narrow. The
 project keeps persons out of logs, metadata and commits, as in PLAN.md section 12.
+
+## 9. Normalization of the 2026-10-31 capture (Milestone 3)
+
+The normalizers ran on the full capture from the lake (`RealCaptureCheck`, aggregates only).
+Rows kept, dropped (removed, counted per rule) and flagged (kept, value defaulted or
+corrected):
+
+| File | Kept | Dropped | Flagged |
+|---|---:|---|---|
+| register | 489,963 | 2 missing name | 644 terminated without `closed` flag (status TERMINATED), 3 postal codes not `NNNN` |
+| officers | 283,085 | – | 12,447 without position and governing body (below) |
+| members | 186,216 | – | 4 jointly held shares with a single co-owner (holder = that owner) |
+| stockholders | 22,485 | 6 natural persons without a name | – |
+| beneficial_owners | 200,345 | 1 without forename and surname | – |
+| equity_capitals | 144,248 | 4 without currency | – |
+| liquidations | 9,649 | – | – |
+| insolvency | 18,053 | – | – |
+| reorganizations | 10,757 | 157 with a malformed registration number (below) | – |
+
+Snapshot: 489,963 companies, 211,753 with at least one role, 0 orphan roles, 49 roles that
+are exact duplicates of another role of the same company (collapsed). Status: ACTIVE
+211,906 · IN_LIQUIDATION 9,209 · INSOLVENT 696 · LEGAL_PROTECTION 119 · TERMINATED 259,648
+· REORGANIZED 8,385. 141,019 companies have a capital (registered equity, else paid-up).
+
+Findings that changed the model:
+- **Officers without position:** 12,447 officer rows have neither `position` nor
+  `governing_body`. 12,433 are natural persons with representation rights (`INDIVIDUALLY`
+  12,430), 90 % of them in sole proprietorships (IK 11,215, IND 838, ZEM 182). They are real
+  representatives, so they are kept and flagged; `Role.Officer` no longer requires a position.
+- **Several nationalities:** 92 beneficial owners list more than one nationality, separated
+  by `;` inside the field (`LV;US`, up to three). `BeneficialOwner.nationalities` is a set.
+- **Joint owners:** every `JOINT_OWNERS` member (171) and stockholder (14) has rows in its
+  joint-owners file (join `member_id = id`); 4 member groups have only one co-owner.
+- **Depositories:** the 37 `DEPOSITORY` stockholders have no `name`; the holder is
+  `depository_registration_number` + `depository_name`.
+- **Legal forms:** the capture has 54 distinct `type` codes (not 61 as first estimated); all
+  are in the mapping table (`LegalForms`), six without a Latvian label (register `S`, mapped to
+  ASSOCIATION).
+- **Reorganizations:** 156 registration numbers have 10 digits and start with `1`, a legacy
+  scheme that does not match the register (8 match after removing the first digit). These
+  rows are dropped and counted; the file is used for history only, not for status.
+- **Capital:** 3,022 companies list both registered and paid-up equity; the registered amount
+  is used.
+
+## 10. First real diff (Milestone 4)
+
+Captures 2026-10-31 (files of 2026-10-30 21:25 UTC) and 2026-11-01 (files of 2026-10-31
+21:25 UTC, captured after midnight Riga time). The Java diff found 4 events, all
+`MANAGEMENT_CHANGED` with one officer removed and none added: three associations (BDR,
+executive body) and one farm (ZEM, owner). An independent SQL check on the lake Parquet files
+agrees: `register`, `members` and `beneficial_owners` are identical in both captures, and
+`officers` differs by exactly 4 removed rows in these 4 companies. This Saturday export
+changed very little; a weekday capture is needed for a fuller picture.
+
+Finding 4.4 (are role ids stable across captures?) is still open: there were no additions to
+compare. The diff compares roles by value, so it does not depend on the ids.
+
+The diff step holds both snapshots in memory: peak 2.2 GB for the cli container with
+`-Xmx2g`, 1 min 53 s on the 1-CPU VM.

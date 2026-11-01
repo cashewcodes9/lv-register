@@ -6,5 +6,6 @@ import java.time.LocalDate;
 @FunctionalInterface
 public interface Step {
 
-    void run(LocalDate captureDate) throws Exception;
+    /** Runs the step; the outcome is reported to Dagster when the CLI runs under Pipes. */
+    StepOutcome run(LocalDate captureDate) throws Exception;
 }

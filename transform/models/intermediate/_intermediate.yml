@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: int_companies
+    description: One valid row per company and capture, with status and capital (rules of the Java normalizers).
+    columns:
+      - name: legal_form_unmapped
+        description: The legal form code is not in seeds/legal_forms.csv (family OTHER).
+        tests:
+          - accepted_values:
+              arguments:
+                values: [false]
+              config:
+                severity: warn
+  - name: int_company_roles
+    description: Role signatures per company and capture, compared by value as in the Java diff.
+  - name: int_snapshot_diff
+    description: The diff in SQL; must agree with the Java events (tests/parity_sql_diff_equals_java_events.sql).

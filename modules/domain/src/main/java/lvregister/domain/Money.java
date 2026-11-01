@@ -17,6 +17,6 @@ public record Money(BigDecimal amount, String currency) {
         if (!CURRENCY.matcher(currency).matches()) {
             throw new IllegalArgumentException("currency must be an ISO 4217 code: " + currency);
         }
-        amount = amount.stripTrailingZeros();
+        amount = Decimals.canonical(amount);
     }
 }

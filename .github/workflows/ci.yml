@@ -1,16 +1,25 @@
 name: ci
 
+# main: stable showcase. dev: integration branch. Milestone branches (milestone/<n>-<name>)
+# are checked through their pull request into dev.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+    branches: [dev, main]
 
 jobs:
   backend:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Gradle build and tests (build container)
         run: make build
-      - name: Build the cli image
-        run: docker build --target cli -t lv-register/cli:ci .
+      - name: Build the cli and api images
+        run: docker build --target cli -t lv-register/cli:ci . && docker build --target api -t lv-register/api:ci .
+      - name: dbt build on the committed fixtures (orchestration image)
+        run: make dbt-fixtures
+      - name: Dagster definitions, asset graph and checks (pytest, orchestration image)
+        run: make dagster-test
+      - name: Frontend lock-file install, types, lint, tests and build (Node container)
+        run: make web-check
