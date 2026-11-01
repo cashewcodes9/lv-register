@@ -3,27 +3,33 @@ package lvregister.quality;
 import java.util.Map;
 
 /**
- * Warning levels of the quality report. Starting values, to be tuned on real captures.
+ * Warning levels of the quality report and the Dagster checks. Starting values, to be tuned on
+ * real captures.
  *
- * @param dropShare        drop share of a file above which it warns (rows dropped / rows read)
- * @param rowChangeShare   change of rows read vs the previous capture above which it warns
+ * @param dropShare        drop share of a file above which it warns (rows dropped / rows read);
+ *                         the {@code drop_share} check blocks above it
+ * @param rowChangeShare   change of rows read (and of file sizes) vs the previous capture above
+ *                         which it warns
  * @param eventSpikeShare  events of one type per company above which it warns (a spike usually
  *                         means a parsing problem)
  * @param eventSpikeMin    an event type never warns below this count
  * @param storageWarnBytes total bucket size above which it warns
+ * @param eventHardShare   events of one type per company above which the {@code event_spike}
+ *                         check blocks the capture
  */
 public record Thresholds(double dropShare, double rowChangeShare, double eventSpikeShare, long eventSpikeMin,
-        long storageWarnBytes) {
+        long storageWarnBytes, double eventHardShare) {
 
     /** {@code QUALITY_DROP_SHARE}, {@code QUALITY_ROW_CHANGE_SHARE}, {@code QUALITY_EVENT_SPIKE_SHARE},
-     *  {@code QUALITY_EVENT_SPIKE_MIN}, {@code STORAGE_WARN_GB}. */
+     *  {@code QUALITY_EVENT_SPIKE_MIN}, {@code STORAGE_WARN_GB}, {@code QUALITY_EVENT_HARD_SHARE}. */
     public static Thresholds fromEnvironment(Map<String, String> env) {
         return new Thresholds(
                 Double.parseDouble(env.getOrDefault("QUALITY_DROP_SHARE", "0.01")),
                 Double.parseDouble(env.getOrDefault("QUALITY_ROW_CHANGE_SHARE", "0.05")),
                 Double.parseDouble(env.getOrDefault("QUALITY_EVENT_SPIKE_SHARE", "0.01")),
                 Long.parseLong(env.getOrDefault("QUALITY_EVENT_SPIKE_MIN", "500")),
-                (long) (Double.parseDouble(env.getOrDefault("STORAGE_WARN_GB", "10")) * 1024 * 1024 * 1024));
+                (long) (Double.parseDouble(env.getOrDefault("STORAGE_WARN_GB", "10")) * 1024 * 1024 * 1024),
+                Double.parseDouble(env.getOrDefault("QUALITY_EVENT_HARD_SHARE", "0.10")));
     }
 
     public static Thresholds defaults() {

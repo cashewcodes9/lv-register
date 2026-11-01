@@ -28,4 +28,18 @@ public final class LakeCaptures {
     public static Optional<LocalDate> previous(List<LocalDate> captures, LocalDate date) {
         return captures.stream().filter(d -> d.isBefore(date)).max(LocalDate::compareTo);
     }
+
+    /**
+     * Fails when the capture made just before {@code date} is no longer in the lake (pruned):
+     * a new diff would compare with an older capture and replace the events written earlier.
+     *
+     * @param made every capture ever made (the raw manifests)
+     */
+    public static void requirePreviousInLake(List<LocalDate> lake, List<LocalDate> made, LocalDate date) {
+        Optional<LocalDate> previousMade = previous(made, date);
+        if (previousMade.isPresent() && !previousMade.equals(previous(lake, date))) {
+            throw new IllegalStateException("the capture before " + date + " (" + previousMade.get()
+                    + ") was pruned from the lake: the events of " + date + " are kept as they are");
+        }
+    }
 }

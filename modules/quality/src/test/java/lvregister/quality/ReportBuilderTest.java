@@ -79,7 +79,7 @@ class ReportBuilderTest {
                         Map.of("register.unmapped_legal_form", 3L, "register.unmapped_closed_flag", 1L))), 5);
         Map<SourceFile, Long> previous = rows(1000);
         previous.put(SourceFile.MEMBERS, 800L);
-        Thresholds t = new Thresholds(0.01, 0.05, 0.01, 500, 25);
+        Thresholds t = new Thresholds(0.01, 0.05, 0.01, 500, 25, 0.10);
 
         QualityReport r = ReportBuilder.build(inputs(rows(1000), previous, counts,
                 Map.of("MANAGEMENT_CHANGED", 1001L, "MISSING_FROM_SNAPSHOT", 2L)), t);
