@@ -214,6 +214,12 @@ board member removed; 47404003378: farm owner removed).
   4.2 min, prune 13 s). All checks passed; 4 events as before; `counts_match_marts` compared
   489,963 = 489,963; index wrote nothing (idempotent). Peak memory 2.96 GB of 3.8 GB.
   `make capture-off` / `capture-on` work. Dagster idle: about 420 MB.
+- Reprocessing: `make capture-now DATE=2026-10-31` (a past capture) ran green in about 23 min:
+  download fetched nothing (11 skipped), lake unchanged, diff baseline (0 events), index wrote
+  nothing (the serving upsert keeps the newer state). Peak 2.56 GB.
+- Lesson: start Dagster only through make (`make up`, `make dagster`); without `DOCKER_GID` the
+  code server cannot reach the Docker socket. Its health check now says so. Run monitoring is
+  on, so a run whose worker died does not block the queue.
 - Removed a `dbt.log` committed by mistake in Milestone 6 (compiled SQL only, no data).
 
 ## Milestone 8: next steps, in order

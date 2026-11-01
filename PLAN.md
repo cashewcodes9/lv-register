@@ -574,7 +574,7 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
       sensor, retry policy with backoff for `download`
 - [x] `make capture-now`, `make capture-off`, `make capture-on`, `make status` (section 6.2)
 - [x] `prune` step and retention settings in `.env`; Dagster run retention 90 days
-- [ ] Reprocessing past captures from the lake (not from UR) works from the UI
+- [x] Reprocessing past captures from the lake (not from UR) works from the UI
 - [x] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
