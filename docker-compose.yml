@@ -202,7 +202,9 @@ services:
     group_add:
       - "${DOCKER_GID:-0}"
     healthcheck:
-      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      # Also checks the Docker socket: without it (DOCKER_GID unset, i.e. not started with make)
+      # every Java step would fail with "Permission denied".
+      test: ["CMD-SHELL", "dagster api grpc-health-check -p 4000 && python -c \"import docker; docker.from_env().ping()\""]
       interval: 15s
       timeout: 10s
       retries: 10
