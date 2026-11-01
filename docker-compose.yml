@@ -94,6 +94,8 @@ services:
       # Optional: RealCaptureCheck normalizes this capture from the compose lake.
       LV_REAL_CAPTURE_DATE: ${LV_REAL_CAPTURE_DATE:-}
       LV_TEST_HEAP: ${LV_TEST_HEAP:-512m}
+      # Optional: DbtFixturesTest rewrites transform/fixtures/lake when set to 1.
+      LV_WRITE_DBT_FIXTURES: ${LV_WRITE_DBT_FIXTURES:-}
       DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-1GB}
 
   cli:
