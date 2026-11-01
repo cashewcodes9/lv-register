@@ -12,7 +12,7 @@ and a Spring Boot API and a React app serve it.
 Latvia is the Baltic country North Data doesn't cover yet. The register publishes on
 [data.gov.lv](https://data.gov.lv/dati/lv/organization/ur) under CC0, updated daily.
 
-![Demo: search, company page, network graph and pipeline report](docs/images/demo.gif)
+[![Demo: search, company page, network graph and pipeline report](docs/images/demo.gif)](docs/images/demo.gif)
 
 **Status:** a working prototype. Milestones 1–9 of [PLAN.md](PLAN.md) are done: the full
 pipeline runs on real captures (489,963 companies, 671,912 company roles), orchestrated by
