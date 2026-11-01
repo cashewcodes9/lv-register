@@ -27,3 +27,11 @@ dependencies {
 
 // The plain jar is not needed; bootJar is the deliverable (Dockerfile target `api`).
 tasks.jar { enabled = false }
+
+// Production: the built React app (web/dist) is served by Spring Boot from classpath:/static.
+// The Dockerfile sets LV_WEB_DIST after its `web` stage; local Gradle builds ship the API only.
+tasks.processResources {
+    providers.environmentVariable("LV_WEB_DIST").orNull?.let { dist ->
+        from(dist) { into("static") }
+    }
+}

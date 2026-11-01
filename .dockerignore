@@ -12,3 +12,4 @@ transform/logs/
 transform/{{*
 **/__pycache__/
 **/.pytest_cache/
+.cache/

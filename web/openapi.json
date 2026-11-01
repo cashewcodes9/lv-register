@@ -1,0 +1,810 @@
+{
+  "components" : {
+    "schemas" : {
+      "AddressDto" : {
+        "properties" : {
+          "atvk" : {
+            "type" : [ "string", "null" ]
+          },
+          "line" : {
+            "type" : "string"
+          },
+          "postalCode" : {
+            "type" : [ "string", "null" ]
+          },
+          "vzdId" : {
+            "format" : "int64",
+            "type" : [ "integer", "null" ]
+          }
+        },
+        "required" : [ "atvk", "line", "postalCode", "vzdId" ],
+        "type" : "object"
+      },
+      "CompanyDto" : {
+        "properties" : {
+          "address" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/AddressDto"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "asOf" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "capital" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/MoneyDto"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "legalFamily" : {
+            "type" : "string"
+          },
+          "legalFormCode" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "regNumber" : {
+            "type" : "string"
+          },
+          "registered" : {
+            "format" : "date",
+            "type" : [ "string", "null" ]
+          },
+          "roles" : {
+            "items" : {
+              "$ref" : "#/components/schemas/RoleDto"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "terminated" : {
+            "format" : "date",
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "address", "asOf", "capital", "legalFamily", "legalFormCode", "name", "regNumber", "registered", "roles", "status", "terminated" ],
+        "type" : "object"
+      },
+      "EdgeDto" : {
+        "properties" : {
+          "from" : {
+            "type" : "string"
+          },
+          "position" : {
+            "type" : [ "string", "null" ]
+          },
+          "role" : {
+            "type" : "string"
+          },
+          "to" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "from", "position", "role", "to" ],
+        "type" : "object"
+      },
+      "EventDto" : {
+        "properties" : {
+          "capture" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "payload" : {
+            "additionalProperties" : true,
+            "type" : "object"
+          },
+          "previousCapture" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "regNumber" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "capture", "id", "payload", "previousCapture", "regNumber", "type" ],
+        "type" : "object"
+      },
+      "MassAddressDto" : {
+        "properties" : {
+          "data" : {
+            "additionalProperties" : true,
+            "type" : "object"
+          },
+          "rank" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "vzdId" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "data", "rank", "vzdId" ],
+        "type" : "object"
+      },
+      "MoneyDto" : {
+        "properties" : {
+          "amount" : {
+            "type" : "string"
+          },
+          "currency" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "amount", "currency" ],
+        "type" : "object"
+      },
+      "NetworkDto" : {
+        "properties" : {
+          "edges" : {
+            "items" : {
+              "$ref" : "#/components/schemas/EdgeDto"
+            },
+            "type" : "array"
+          },
+          "nodes" : {
+            "items" : {
+              "$ref" : "#/components/schemas/NodeDto"
+            },
+            "type" : "array"
+          },
+          "root" : {
+            "type" : "string"
+          },
+          "truncated" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "edges", "nodes", "root", "truncated" ],
+        "type" : "object"
+      },
+      "NodeDto" : {
+        "properties" : {
+          "depth" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "label" : {
+            "type" : "string"
+          },
+          "regNumber" : {
+            "type" : [ "string", "null" ]
+          },
+          "status" : {
+            "type" : [ "string", "null" ]
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "depth", "id", "label", "regNumber", "status", "type" ],
+        "type" : "object"
+      },
+      "PageDtoEventDto" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/EventDto"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
+      "PageDtoMassAddressDto" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/MassAddressDto"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
+      "PageDtoRunSummaryDto" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/RunSummaryDto"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
+      "PageDtoSearchHitDto" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/SearchHitDto"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "items", "page", "size", "total" ],
+        "type" : "object"
+      },
+      "PartyDto" : {
+        "properties" : {
+          "kind" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "owners" : {
+            "items" : {
+              "$ref" : "#/components/schemas/PartyDto"
+            },
+            "type" : "array"
+          },
+          "personKey" : {
+            "type" : [ "string", "null" ]
+          },
+          "regNumber" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "kind", "name", "owners", "personKey", "regNumber" ],
+        "type" : "object"
+      },
+      "RoleDto" : {
+        "properties" : {
+          "governingBody" : {
+            "type" : [ "string", "null" ]
+          },
+          "holder" : {
+            "$ref" : "#/components/schemas/PartyDto"
+          },
+          "kind" : {
+            "type" : "string"
+          },
+          "nationalities" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "nominalValue" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/MoneyDto"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "position" : {
+            "type" : [ "string", "null" ]
+          },
+          "residence" : {
+            "type" : [ "string", "null" ]
+          },
+          "shareRegister" : {
+            "type" : [ "string", "null" ]
+          },
+          "shares" : {
+            "type" : [ "string", "null" ]
+          },
+          "since" : {
+            "format" : "date",
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "governingBody", "holder", "kind", "nationalities", "nominalValue", "position", "residence", "shareRegister", "shares", "since" ],
+        "type" : "object"
+      },
+      "RunDto" : {
+        "properties" : {
+          "captureDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "report" : {
+            "additionalProperties" : true,
+            "type" : "object"
+          },
+          "runId" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "captureDate", "report", "runId", "status" ],
+        "type" : "object"
+      },
+      "RunSummaryDto" : {
+        "properties" : {
+          "captureDate" : {
+            "format" : "date",
+            "type" : "string"
+          },
+          "runId" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "captureDate", "runId", "status" ],
+        "type" : "object"
+      },
+      "SearchHitDto" : {
+        "properties" : {
+          "legalFormCode" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "regNumber" : {
+            "type" : "string"
+          },
+          "score" : {
+            "format" : "double",
+            "type" : "number"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "legalFormCode", "name", "regNumber", "score", "status" ],
+        "type" : "object"
+      },
+      "StatRowDto" : {
+        "properties" : {
+          "dimensions" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "value" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "dimensions", "value" ],
+        "type" : "object"
+      },
+      "StatsDto" : {
+        "properties" : {
+          "companies" : {
+            "items" : {
+              "$ref" : "#/components/schemas/StatRowDto"
+            },
+            "type" : "array"
+          },
+          "eventsPerCapture" : {
+            "items" : {
+              "$ref" : "#/components/schemas/StatRowDto"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "companies", "eventsPerCapture" ],
+        "type" : "object"
+      }
+    }
+  },
+  "info" : {
+    "title" : "OpenAPI definition",
+    "version" : "v0"
+  },
+  "openapi" : "3.1.0",
+  "paths" : {
+    "/api/companies/{reg}" : {
+      "get" : {
+        "operationId" : "company",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "reg",
+          "required" : true,
+          "schema" : {
+            "pattern" : "\\d{9}|\\d{11}",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CompanyDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A company with its officers, owners and beneficial owners",
+        "tags" : [ "companies" ]
+      }
+    },
+    "/api/companies/{reg}/events" : {
+      "get" : {
+        "operationId" : "events_1",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "reg",
+          "required" : true,
+          "schema" : {
+            "pattern" : "\\d{9}|\\d{11}",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "maximum" : 10000,
+            "minimum" : 0,
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageDtoEventDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Change events of a company, newest capture first",
+        "tags" : [ "companies" ]
+      }
+    },
+    "/api/companies/{reg}/network" : {
+      "get" : {
+        "operationId" : "network",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "reg",
+          "required" : true,
+          "schema" : {
+            "pattern" : "\\d{9}|\\d{11}",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/NetworkDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Company–person graph: the company, its parties, their other companies and the parties of those",
+        "tags" : [ "companies" ]
+      }
+    },
+    "/api/events" : {
+      "get" : {
+        "operationId" : "events",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "date",
+          "required" : false,
+          "schema" : {
+            "format" : "date",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "type",
+          "required" : false,
+          "schema" : {
+            "pattern" : "[A-Z_]{3,40}",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "maximum" : 10000,
+            "minimum" : 0,
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageDtoEventDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "All change events, newest capture first; optionally of one capture date and one type",
+        "tags" : [ "feed" ]
+      }
+    },
+    "/api/features/mass-addresses" : {
+      "get" : {
+        "operationId" : "massAddresses",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "maximum" : 10000,
+            "minimum" : 0,
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageDtoMassAddressDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Addresses with many active companies (mass registration), best rank first",
+        "tags" : [ "feed" ]
+      }
+    },
+    "/api/runs" : {
+      "get" : {
+        "operationId" : "runs",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "maximum" : 10000,
+            "minimum" : 0,
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageDtoRunSummaryDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Pipeline runs, newest capture first",
+        "tags" : [ "feed" ]
+      }
+    },
+    "/api/runs/{id}" : {
+      "get" : {
+        "operationId" : "run",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "pattern" : "[A-Za-z0-9-]{1,64}",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RunDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "A pipeline run with its quality report",
+        "tags" : [ "feed" ]
+      }
+    },
+    "/api/search" : {
+      "get" : {
+        "operationId" : "search",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "q",
+          "required" : true,
+          "schema" : {
+            "maxLength" : 100,
+            "minLength" : 2,
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "default" : 0,
+            "format" : "int32",
+            "maximum" : 10000,
+            "minimum" : 0,
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "default" : 20,
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1,
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PageDtoSearchHitDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Search companies by name (case, diacritics and small typos ignored) or registration number",
+        "tags" : [ "companies" ]
+      }
+    },
+    "/api/stats" : {
+      "get" : {
+        "operationId" : "stats",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StatsDto"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "summary" : "Companies per legal form, status and region; events per capture",
+        "tags" : [ "feed" ]
+      }
+    }
+  }
+}

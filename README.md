@@ -7,13 +7,32 @@ read-only API and a React app to explore and check the data.
 Latvia is the Baltic country North Data does not cover yet. The register publishes its data
 on [data.gov.lv](https://data.gov.lv/dati/lv/organization/ur) under CC0, updated daily.
 
-**Status:** Milestones 1–5 done: the Java pipeline (download → lake → diff → quality → index)
-runs on real weekly captures into PostgreSQL. dbt, Dagster, the API and the frontend come next.
+**Status:** Milestones 1–9 done: the Java pipeline (download → lake → diff → quality → index →
+prune) runs on real weekly captures, orchestrated by Dagster with dbt in between; a Spring Boot
+API and a React frontend serve the result. Milestone 10 (polish) is next.
+
+## Run it
+
+```sh
+cp .env.example .env      # optional: every value has a local default
+make up                   # lake, Postgres, API + frontend, Dagster; waits until healthy
+make capture-now          # queue today's capture in Dagster (about 25 minutes on 1 CPU)
+```
+
+| What | Where |
+|---|---|
+| Frontend and API | http://localhost:8080 (API under `/api`, Swagger UI at `/api/docs`) |
+| Dagster | http://localhost:3000 (asset graph, runs, checks, schedule) |
+| Frontend dev server with hot reload | `make web-dev`, then http://localhost:5173 |
+| Everything else | `make help` |
+
+Checks: `make build` (Java), `make dagster-test`, `make dbt-fixtures`, `make web-check`
+(frontend), `make web-smoke` (headless browser against the running stack).
 
 - [PLAN.md](PLAN.md): goal, scope, tech stack and milestones
 - [docs/architecture.md](docs/architecture.md): layers, pipeline, event rules, modules
 - [docs/FAQ.md](docs/FAQ.md): why the project is built this way (serving store, dbt, Dagster,
-  marts, storage, capture dates)
+  marts, API, search, frontend, storage, capture dates)
 - [docs/source-assessment.md](docs/source-assessment.md): what the UR files really contain
 - [ROADMAP.md](ROADMAP.md): after the MVP, starting with observability and monitoring
 - Reference design: [Oversee](https://github.com/cashewcodes9/Oversee), the same layer
@@ -26,7 +45,9 @@ Stack:
 - **Orchestration:** Dagster: weekly capture schedule with an off/on switch, asset checks,
   reprocessing from the lake
 - **Serving:** PostgreSQL behind a swappable serving port (Elasticsearch adapter on the
-  roadmap), Spring Boot 4 (API only), React + TypeScript
+  roadmap), Spring Boot 4 (API only)
+- **Frontend:** React + TypeScript (Vite), shadcn/ui, TanStack Query, Recharts, d3.js for the
+  company network; colours after North Data's site
 
 Everything builds and runs in Docker; the host needs only Docker, git and make.
 

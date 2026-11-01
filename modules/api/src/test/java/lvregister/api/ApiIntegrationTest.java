@@ -95,4 +95,26 @@ class ApiIntegrationTest {
                 .andExpect(jsonPath("$.paths['/api/runs/{id}']").exists())
                 .andExpect(jsonPath("$.paths['/api/features/mass-addresses']").exists());
     }
+
+    /**
+     * The frontend's types are generated from {@code web/openapi.json}. This test keeps that file
+     * equal to the spec the API serves; {@code LV_WRITE_OPENAPI=1} rewrites it.
+     */
+    @Test
+    void theCommittedOpenApiSpecIsCurrent() throws Exception {
+        String served = mvc.perform(get("/api/openapi.json")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        tools.jackson.databind.json.JsonMapper json = tools.jackson.databind.json.JsonMapper.builder()
+                .enable(tools.jackson.databind.SerializationFeature.INDENT_OUTPUT)
+                .enable(tools.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).build();
+        java.util.Map<?, ?> spec = json.readValue(served, java.util.LinkedHashMap.class);
+        spec.remove("servers");
+        String normalized = json.writeValueAsString(spec) + "\n";
+        java.nio.file.Path file = java.nio.file.Path.of("../../web/openapi.json");
+        if ("1".equals(System.getenv("LV_WRITE_OPENAPI"))) {
+            java.nio.file.Files.writeString(file, normalized);
+        }
+        org.assertj.core.api.Assertions.assertThat(file).as("web/openapi.json is stale: run make openapi").exists();
+        org.assertj.core.api.Assertions.assertThat(java.nio.file.Files.readString(file)).isEqualTo(normalized);
+    }
 }

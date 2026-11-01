@@ -468,10 +468,44 @@ at `/api/docs`, spec at `/api/openapi.json`): the endpoints in PLAN.md section 1
 - Real data on the VM: the API uses about 200 MB (`-Xmx256m`); the network of the company
   whose party has the most roles answers in 0.05 s (105 nodes, truncated).
 
-**Frontend** (`web/`, React + TypeScript + Vite): Overview, Search, Company, Network,
-Changes, Pipeline and Insights pages. It talks only to the API, through TanStack Query and
-the generated types. The Pipeline page links each run to its Dagster run. In
-production Spring Boot serves `web/dist`, so API and frontend are one service.
+**Frontend** (`web/`, Milestone 9): React 19 + TypeScript 5.9, built with Vite 8. Why these
+libraries: [FAQ](FAQ.md#why-shadcnui-and-not-semantic-ui-which-north-data-uses).
+
+```
+web/openapi.json ──openapi-typescript──► src/api/schema.d.ts (generated, not committed)
+        ▲                                        │
+ApiIntegrationTest keeps it current      openapi-fetch client + TanStack Query hooks (src/api)
+(make openapi rewrites it)                       │
+                                     pages (src/pages) ◄── shadcn/ui (src/components/ui),
+                                                          Recharts (Overview), d3 (Network)
+```
+
+| Page | Route | Shows |
+|---|---|---|
+| Overview | `/` | figures, companies by legal family, status and legal form, events per capture (shadcn charts on Recharts) |
+| Search | `/search?q=` | search as you type (waits 300 ms, at least 2 characters), paged |
+| Company | `/companies/{reg}` | facts, officers, shareholders, beneficial owners, change timeline |
+| Network | `/companies/{reg}/network?level=&roles=` | d3-force graph; starts with the company and its people, levels 2 and 3 add their other companies and the people of those, role toggles; filtered locally from one API response |
+| Changes | `/changes?date=&type=` | the changes feed with filters |
+| Pipeline | `/pipeline`, `/pipeline/{id}` | runs; one quality report (files, drops, warnings, snapshot, events, storage) with a link to the Dagster run |
+| Insights | `/insights` | mass-registration addresses |
+
+- **Types:** the API spec marks every field required and `@Nullable` fields as `T | null`
+  (`OpenApiConfig`), so the generated types say exactly what the JSON holds.
+- **Look:** shadcn/ui (Radix, "Nova" preset), colours and fonts after North Data's site:
+  teal `#007388` as primary, orange, muted red, green and blue as chart colours, Roboto and
+  Roboto Mono (self-hosted). No North Data name or logo.
+- **Size:** each page is its own chunk; the entry bundle is about 350 KB (110 KB gzipped);
+  Recharts and d3 load only on Overview and Network.
+- **Production:** the Dockerfile builds `web/dist` (stage `web`) and puts it into the api jar
+  (stage `api-jar`); Spring Boot serves it, and `FrontendController` returns `index.html` for
+  the client routes. One service, one port (8080).
+- **Development:** `make web-dev` runs Vite on :5173 with hot reload against the API on :8080
+  (CORS allows only that origin). npm always runs in `node:24.22.2-alpine` as the host user
+  (`make npm ARGS=...`); exact versions and the lock file are committed.
+- **Checks:** `make web-check` (lock-file install, types, ESLint, Vitest, build; in CI) and
+  `make web-smoke` (headless Chromium against the running stack: every page, fails on console
+  errors; screenshots in `.cache/screenshots`, never committed, they show real names).
 
 ## Containers
 

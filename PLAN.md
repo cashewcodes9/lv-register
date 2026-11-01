@@ -97,7 +97,7 @@ logic lives in Java.
 | Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
 | Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker, git and make |
 | CI | GitHub Actions: backend build + test, dbt parse + build on fixtures, Dagster definitions load, frontend lint + build, Docker image builds |
-| Frontend | React + TypeScript (Vite), TanStack Query for data fetching, Recharts for charts, react-force-graph or d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
+| Frontend | React + TypeScript (Vite), shadcn/ui components (Radix + Tailwind CSS, copied into `web/`; owner decision 2026-11-01), TanStack Query for data fetching, shadcn charts (Recharts) for the stats, d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
 
 Why this split: the pipeline is batch code where a framework adds nothing, so it stays plain
 Java and runs via Picocli. The React-facing API needs middleware (rate limiting, CORS,
@@ -178,7 +178,7 @@ project builds the same on any machine and in CI.
 | `build` | `eclipse-temurin:25-jdk` | runs the Gradle wrapper: `./gradlew build`, tests. Gradle cache in a named volume |
 | `cli` | `Dockerfile` target `cli` (JRE 25 + CLI jar) | runs pipeline steps; launched by Dagster or `docker compose run` |
 | `api` | `Dockerfile` target `api` (JRE 25 + Spring Boot jar with `web/dist`) | API and frontend on one port |
-| `web-dev` | `node:22` (LTS) | Vite dev server with hot reload; `npm` commands; `node_modules` in a named volume |
+| `web-dev` | `node:24.22.2-alpine` (LTS) | Vite dev server with hot reload (profile `dev`); `npm` commands run in the `web` tool service; `node_modules` in `web/` (git-ignored) |
 | `dagster-code` | `orchestration/Dockerfile` (Python, Dagster, dbt-duckdb, dbt project) | Dagster code location (gRPC); launches `cli` containers through the Docker socket |
 | `dagster-webserver` | same image | Dagster UI (:3000): asset graph, runs, backfills, checks |
 | `dagster-daemon` | same image | schedules, sensors, run queue, retries |
@@ -491,7 +491,9 @@ Pages:
 Rules:
 - Data fetching with TanStack Query only, against the generated API types.
 - No mock data once the API exists. Build pages against real API responses.
-- Keep styling simple and clean. Function over decoration.
+- Keep styling simple and clean. Function over decoration. UI components from shadcn/ui
+  (Radix primitives + Tailwind CSS), kept in `web/src/components/ui`; no unmaintained
+  libraries (Semantic UI was considered and dropped: no release since 2022/2023, no React 19).
 
 ## 15. Milestones
 
@@ -578,6 +580,8 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
 - [x] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
+Design choices and measurements: [FAQ](docs/FAQ.md#how-is-the-api-built-and-why-these-choices).
+
 - [x] Spring Boot 4 app in `modules/api`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
 - [x] All endpoints from section 13
 - [x] DTO records, validation, paging, ProblemDetail errors
@@ -587,12 +591,14 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
       Testcontainer
 
 ### Milestone 9: React frontend
-- [ ] Vite + React + TypeScript app in `web/`
-- [ ] TypeScript types generated from the OpenAPI spec
-- [ ] All pages from section 14
-- [ ] Frontend lint + build in CI
-- [ ] `web-dev` compose service with hot reload against the API
-- [ ] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
+Why shadcn/ui and d3.js: [FAQ](docs/FAQ.md#why-shadcnui-and-not-semantic-ui-which-north-data-uses).
+
+- [x] Vite + React + TypeScript app in `web/`
+- [x] TypeScript types generated from the OpenAPI spec
+- [x] All pages from section 14
+- [x] Frontend lint + build in CI
+- [x] `web-dev` compose service with hot reload against the API
+- [x] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
       command
 
 ### Milestone 10: Polish
