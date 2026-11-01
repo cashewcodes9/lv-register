@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-11-01 · **Current milestone:** 7 (in review, PR into `dev`); 4 has two open real-data items
+**Last updated:** 2026-11-01 · **Current milestone:** 8 (not started); 4 has two open real-data items
 
 ## Status
 
@@ -17,7 +17,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 4. Diff + events | code merged into `dev` 2026-11-01 (PR #2, CI green); open: a capture a few days later, spot-check 5 events |
 | 5. Quality + index | done 2026-11-01, merged into `dev` (PR #3, CI green) |
 | 6. dbt | done 2026-11-01, merged into `dev` (PR #4, CI green) |
-| 7. Dagster orchestration | done 2026-11-01 on `milestone/7-dagster` (PR into `dev`) |
+| 7. Dagster orchestration | done 2026-11-01, merged into `dev` (PR #5, CI green) |
 | 8–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
