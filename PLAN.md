@@ -578,12 +578,12 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
 - [x] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
-- [ ] Spring Boot 4 app in `api/`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
-- [ ] All endpoints from section 13
-- [ ] DTO records, validation, paging, ProblemDetail errors
-- [ ] Bucket4j rate limit, CORS for Vite dev server
-- [ ] Actuator health, springdoc-openapi, Caffeine cache
-- [ ] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against a PostgreSQL
+- [x] Spring Boot 4 app in `modules/api`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
+- [x] All endpoints from section 13
+- [x] DTO records, validation, paging, ProblemDetail errors
+- [x] Bucket4j rate limit, CORS for Vite dev server
+- [x] Actuator health, springdoc-openapi, Caffeine cache
+- [x] Tests: `@WebMvcTest` for controllers, one `@SpringBootTest` against a PostgreSQL
       Testcontainer
 
 ### Milestone 9: React frontend

@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-11-01 · **Current milestone:** 8 (not started); 4 has two open real-data items
+**Last updated:** 2026-11-01 · **Current milestone:** 8 (in review, PR into `dev`); 4 has two open real-data items
 
 ## Status
 
@@ -18,7 +18,8 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 5. Quality + index | done 2026-11-01, merged into `dev` (PR #3, CI green) |
 | 6. dbt | done 2026-11-01, merged into `dev` (PR #4, CI green) |
 | 7. Dagster orchestration | done 2026-11-01, merged into `dev` (PR #5, CI green) |
-| 8–10 | not started |
+| 8. Spring Boot API | done 2026-11-01 on `milestone/8-api` (PR into `dev`) |
+| 9–10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -222,13 +223,38 @@ board member removed; 47404003378: farm owner removed).
   on, so a run whose worker died does not block the queue.
 - Removed a `dbt.log` committed by mistake in Milestone 6 (compiled SQL only, no data).
 
-## Milestone 8: next steps, in order
+## What exists (Milestone 8)
 
-0. After the Milestone 7 PR is merged: `git switch dev && git pull && git switch -c milestone/8-api`.
-1. Read PLAN.md Milestone 8 and section 13. Ask the owner about Spring Boot 4 version, Bucket4j
-   and springdoc versions before adding them.
-2. `modules/api` (the only module with Spring): reads through `ServingQueries` only.
-3. Memory: the API joins profile `core`; measure it next to Dagster (about 420 MB idle).
+- `modules/api` (Spring Boot 4.1.2, the only Spring module): `ApiApplication`, `ServingConfig`
+  (adapter by `SERVING_BACKEND`, never migrates), `CompanyController`, `FeedController`,
+  `api.dto.Dtos`, `ApiExceptionHandler` (ProblemDetail), `RateLimitFilter` (Bucket4j, per IP,
+  burst 30, 120/min), `WebConfig` (CORS for `http://localhost:5173`), `ServingHealth`,
+  `CachedQueries` + `CacheConfig` (Caffeine: stats, search, 10 min). Config in
+  `application.yml`; env names in `.env.example` (`API_*`).
+- Tests: `ApiControllerTest` (10, `@WebMvcTest`), `RateLimitTest`, `ApiIntegrationTest`
+  (`@SpringBootTest` + PostgreSQL Testcontainer: endpoints, health, OpenAPI paths),
+  `ApiArchitectureTest` (adapter only in `ServingConfig`, never `ServingWriter`, no SQL or
+  pipeline modules).
+- Serving: `PartyLink`, `ServingQueries.companies`, `rolesOfParties`, `Network`,
+  `NetworkBuilder` (two hops, owner's choice; 30 companies, 300 nodes), `ServingNames`.
+  Postgres V3 `party_roles` (trigger + backfill: 671,912 links, 388,644 parties) and V4
+  `company_search` (narrow search table, trigger). Broad queries (more than 1,000 substring
+  matches) skip trigram ranking. Contract suite: 20 tests in the Postgres adapter.
+- Dockerfile target `api`; compose service `api` (profile core, 127.0.0.1:8080, `-Xmx256m`,
+  bash `/dev/tcp` health check: the JRE image has no curl); `make api`; CI builds the image.
+- Real data: all endpoints answer; API about 200 MB; network of the busiest party 0.05 s
+  (105 nodes, truncated); search typical 0.03–0.4 s, the commonest word ("sabiedriba",
+  193,000 names) 2.8 s uncached (6 s before the narrow table and broad ranking).
+- ROADMAP.md section 5: group module folders into shared / pipeline / api (owner: later).
+
+## Milestone 9: next steps, in order
+
+0. After the Milestone 8 PR is merged: `git switch dev && git pull && git switch -c milestone/9-web`.
+1. Read PLAN.md Milestone 9 and section 14. Ask the owner about versions (Node 22 LTS image,
+   Vite, React, TanStack Query, Recharts, the graph library) before adding them.
+2. `web/` with types generated from `/api/openapi.json`; `web-dev` service (profile dev);
+   Dockerfile stage `web`, Spring Boot serves `web/dist`.
+3. Search UI: debounce and at least 2 characters (very common words cost up to ~3 s uncached).
 
 ## Pinned versions
 
@@ -252,6 +278,10 @@ board member removed; 47404003378: farm owner removed).
 | Dagster / dagster-pipes / dagster-webserver | 1.13.28 | owner decision 2026-11-01; Python 3.12 |
 | dagster-postgres / dagster-docker / dagster-dbt | 0.29.28 | released together with Dagster 1.13.28; `pip check` clean |
 | pytest | 9.2.0 | orchestration tests |
+| Spring Boot | 4.1.2 (Spring Framework 7.0.10) | owner 2026-11-01; BOM as a plain Gradle platform, so the catalog's newer Jackson 3.2.4, Flyway 13.12.0, HikariCP 7.1.0, JUnit 6.1.3 win over Boot's 3.1.7, 12.4.0, 7.0.2, 6.0.3 |
+| springdoc-openapi | 3.2.0 | built against Boot 4.1.2 |
+| Bucket4j | 8.21.0 (`com.bucket4j:bucket4j_jdk17-core`) | `bucket4j-core` stopped at 8.10.1 |
+| Caffeine | 3.3.1 | Boot manages 3.2.4 |
 | PostgreSQL image | 18.6-alpine3.24 | 19 is still RC (2026-10-31) |
 | PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime; works with PostgreSQL 18.6 |
 | testcontainers-postgresql | 2.0.5 | `org.testcontainers.postgresql.PostgreSQLContainer` |
@@ -326,3 +356,8 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | Dynamic partitions (captures actually made); dbt assets share them; dbt runs behind the quality gate |
 | 2026-11-01 | `download` refuses past dates unless the manifest is complete; `diff` refuses when its previous capture was pruned; manifests are never pruned |
 | 2026-11-01 | Dagster run retention through a daily job (OSS Dagster only has tick retention); freshness via `FreshnessPolicy` and the freshness daemon (the check + sensor API is superseded) |
+| 2026-11-01 | Milestone 8: Spring Boot 4.1.2, one version per library with the catalog winning, a two-hop network, rate limit 120/min with a burst of 30 (owner) |
+| 2026-11-01 | Network data: `party_roles` derived from the company documents by a trigger (the writer is unchanged); graph built in plain Java (`NetworkBuilder`) through the port |
+| 2026-11-01 | Search on a narrow `company_search` table; queries with more than 1,000 substring matches are ranked exact, prefix, shorter names (no trigram similarity over every match) |
+| 2026-11-01 | The API never migrates the serving schema; the index step owns it (V3/V4 were applied by running `index` once) |
+| 2026-11-01 | Module folders stay flat; grouping into shared / pipeline / api is on ROADMAP.md (owner) |
