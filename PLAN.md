@@ -97,7 +97,7 @@ logic lives in Java.
 | Observability | Roadmap (ROADMAP.md). MVP: logs, Dagster checks, Actuator health |
 | Containers | Docker + Docker Compose. Every build, test and run happens in containers (section 6.1). The host needs only Docker, git and make |
 | CI | GitHub Actions: backend build + test, dbt parse + build on fixtures, Dagster definitions load, frontend lint + build, Docker image builds |
-| Frontend | React + TypeScript (Vite), shadcn/ui components (Radix + Tailwind CSS, copied into `web/`; owner decision 2026-11-01), TanStack Query for data fetching, d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
+| Frontend | React + TypeScript (Vite), shadcn/ui components (Radix + Tailwind CSS, copied into `web/`; owner decision 2026-11-01), TanStack Query for data fetching, shadcn charts (Recharts) for the stats, d3.js for the company-person network. Talks only to the API. In production, Spring Boot serves the built React app as static files, so it stays one service |
 
 Why this split: the pipeline is batch code where a framework adds nothing, so it stays plain
 Java and runs via Picocli. The React-facing API needs middleware (rate limiting, CORS,
@@ -580,6 +580,8 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
 - [x] pytest: definitions load, asset graph and partition mapping are as expected
 
 ### Milestone 8: Spring Boot API
+Design choices and measurements: [FAQ](docs/FAQ.md#how-is-the-api-built-and-why-these-choices).
+
 - [x] Spring Boot 4 app in `modules/api`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
 - [x] All endpoints from section 13
 - [x] DTO records, validation, paging, ProblemDetail errors
@@ -589,6 +591,8 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
       Testcontainer
 
 ### Milestone 9: React frontend
+Why shadcn/ui and d3.js: [FAQ](docs/FAQ.md#why-shadcnui-and-not-semantic-ui-which-north-data-uses).
+
 - [ ] Vite + React + TypeScript app in `web/`
 - [ ] TypeScript types generated from the OpenAPI spec
 - [ ] All pages from section 14

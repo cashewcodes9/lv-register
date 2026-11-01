@@ -37,6 +37,11 @@ React frontend. Follow [PLAN.md](PLAN.md) milestone by milestone.
 - After each milestone: run `make build` (plus `make dbt-build` from Milestone 6 and the
   frontend build from Milestone 9 on), summarize what changed, and tick the checkboxes in
   PLAN.md.
+- Document everything in Markdown as you go: docs/architecture.md for how it works,
+  EXECUTION.md for state and decisions, README for how to run it. After every milestone, add
+  FAQ entries to [docs/FAQ.md](docs/FAQ.md) for the questions and decisions of that milestone
+  (why this library, what was measured, what was rejected), linked from PLAN.md and
+  docs/architecture.md (owner, 2026-11-01).
 - Small commits with clear messages.
 - Never commit raw data, lake files, marts or person-level data.
 - Never add Spring dependencies outside `modules/api`.

@@ -12,6 +12,10 @@ decision is written down. The plan is [PLAN.md](../PLAN.md), the design is
 - [Are dbt and Dagster worth their cost here?](#are-dbt-and-dagster-worth-their-cost-here)
 - [Which Dagster version, and how does the Java CLI talk to Dagster?](#which-dagster-version-and-how-does-the-java-cli-talk-to-dagster)
 - [Does Dagster fit into the VM next to a capture?](#does-dagster-fit-into-the-vm-next-to-a-capture)
+- [How is the API built, and why these choices?](#how-is-the-api-built-and-why-these-choices)
+- [How does the company network work, and is it a privacy problem?](#how-does-the-company-network-work-and-is-it-a-privacy-problem)
+- [Why was search slow on common words, and what fixed it?](#why-was-search-slow-on-common-words-and-what-fixed-it)
+- [Why shadcn/ui and not Semantic UI, which North Data uses?](#why-shadcnui-and-not-semantic-ui-which-north-data-uses)
 - [What are marts?](#what-are-marts)
 - [Why SeaweedFS, and why the AWS SDK if nothing runs on AWS?](#why-seaweedfs-and-why-the-aws-sdk-if-nothing-runs-on-aws)
 - [Why weekly captures, and how are captures dated?](#why-weekly-captures-and-how-are-captures-dated)
@@ -155,6 +159,72 @@ that way:
    Monday morning at 06:00 Riga time.
 
 If memory gets tight, the lever is the `diff` step (two full snapshots), not Dagster.
+
+## How is the API built, and why these choices?
+
+Milestone 8, decided 2026-11-01. Spring Boot 4.1.2 (the latest GA; 4.2 was only a release
+candidate), only in `modules/api`. The pipeline stays plain Java.
+
+| Choice | Why |
+|---|---|
+| Reads only through the `serving` port | the API does not know it is PostgreSQL; an Elasticsearch adapter can replace it (ArchUnit enforces it, and that the API never writes) |
+| DTO records separate from the serving views | the JSON uses `null` instead of `Optional`, and stored JSON (payloads, quality reports) is embedded as JSON, which makes clean OpenAPI types for the frontend |
+| One version per library, ours win | Boot 4.1.2 pins older Jackson (3.1.7), Flyway, HikariCP and JUnit; the BOM is imported as a plain Gradle platform, so the newer catalog versions (Jackson 3.2.4 …) are used everywhere. The Testcontainer test would catch an incompatibility |
+| ProblemDetail errors | the RFC standard error body (`application/problem+json`) for 400, 404 and 429 |
+| Rate limit 120/min, burst 30 per IP | enough for the frontend (a page loads a few endpoints), stops scraping 490,000 companies |
+| Caffeine cache, 10 minutes | stats and search only change when a capture is indexed, once a week |
+| The API never migrates the schema | the index step owns it; the API is read-only |
+
+See [architecture.md, Serving](architecture.md#serving).
+
+## How does the company network work, and is it a privacy problem?
+
+`GET /api/companies/{reg}/network` returns a graph two hops deep (owner's choice): the company,
+its officers, owners and beneficial owners, the other companies of those people and entities,
+and the people of those companies. It is capped at 30 other companies and 300 nodes; the
+response says when it was cut. The busiest case on the real register (the person with the
+most roles) answers in 0.05 s.
+
+The link "this person also holds a role there" comes from the person key (a hash of the
+normalized name and the masked personal code). PostgreSQL keeps a `party_roles` table
+(671,912 links, 388,644 people and entities), filled from the company documents by a trigger,
+so the Java writer did not change.
+
+Privacy: PLAN.md section 12 allows persons only in the context of one company, its page and
+its network graph, and never in bulk. The network starts from one company, is capped, and is
+rate-limited; there is no endpoint that lists or exports persons. The data itself is the open
+register data UR publishes.
+
+## Why was search slow on common words, and what fixed it?
+
+Measured on the real register: a search for "nams" took 6 s the first time. Two causes:
+
+1. **Disk.** The trigram search ran on the `companies` table, whose rows carry every company
+   document (501 MB). A common word touched about 8,600 random blocks, which the 128 MB of
+   PostgreSQL buffers do not keep. Fix: a narrow `company_search` table (name, unaccented
+   name, legal form, status; about 60 MB) with the trigram index, kept by a trigger.
+2. **CPU.** "sabiedriba" (Latvian for "company") appears in 193,000 names. Ranking every
+   match by trigram similarity costs seconds on one CPU. Fix: a query with more than 1,000
+   substring matches is "broad": it returns the substring matches ranked exact name, prefix,
+   then shorter names, and computes similarity only for the page it returns.
+
+Now typical searches take 0.03–0.4 s, the commonest word about 2.8 s uncached, and results are
+cached for 10 minutes. The frontend waits for a pause in typing before it searches.
+
+## Why shadcn/ui and not Semantic UI, which North Data uses?
+
+North Data's frontend uses TypeScript, Semantic UI and d3.js. Checked on 2026-11-01:
+`semantic-ui-css` had no release since October 2022, and `semantic-ui-react` (last release
+December 2023) supports React only up to 18. The owner's rule: no unmaintained libraries.
+Fomantic UI, the maintained fork, was an option; the owner chose **shadcn/ui** after comparing
+the well-maintained libraries (MUI, Ant Design, Mantine, Chakra, Blueprint, shadcn/ui, Radix,
+React Aria, HeroUI and others; all released within months).
+
+shadcn/ui is not a dependency in the usual sense: its components (built on Radix primitives
+and Tailwind CSS) are copied into `web/src/components/ui`, so the repo owns every line, and only
+what is used is shipped. Its charts are built on Recharts, used for the Overview page. The
+company network is drawn with **d3.js**, as at North Data. TypeScript stays on 5.9:
+TypeScript 7.0 is out, but `openapi-typescript`, which generates the API types, accepts only 5.x.
 
 ## What are marts?
 
