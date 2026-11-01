@@ -46,7 +46,7 @@ class PostgresServingTest extends ServingContract {
     @Override
     protected void reset() {
         try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
-            st.execute("TRUNCATE companies, events, runs, stats, features");
+            st.execute("TRUNCATE companies, party_roles, events, runs, stats, features");
         } catch (java.sql.SQLException e) {
             throw new IllegalStateException(e);
         }

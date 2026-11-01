@@ -92,6 +92,45 @@ public abstract class ServingContract {
         assertThat(queries().company("40003000001").map(CompanyView::name)).contains("SIA \"Newer\"");
     }
 
+    @Test
+    void companiesByRegistrationNumbers() {
+        writer().upsertCompanies(Stream.of(company("40003000001", "SIA \"Alfa\"", D1), company("40003000002", "SIA \"Beta\"", D1)));
+
+        assertThat(queries().companies(List.of("40003000002", "40003000001", "40003000009")))
+                .extracting(CompanyView::regNumber).containsExactlyInAnyOrder("40003000001", "40003000002");
+        assertThat(queries().companies(List.of())).isEmpty();
+    }
+
+    @Test
+    void rolesOfPartiesLinkPersonsAndEntitiesIncludingJointOwners() {
+        writer().upsertCompanies(Stream.of(company("40003000001", "SIA \"Alfa\"", D1), company("40003000002", "SIA \"Beta\"", D1)));
+        String person = PartyLink.personKey("ab".repeat(32));
+        String holder = PartyLink.companyKey("40003999999");
+
+        assertThat(queries().rolesOfParties(List.of(person, holder), 100)).containsExactly(
+                new PartyLink(holder, "40003000001", "shareholder"),
+                new PartyLink(holder, "40003000002", "shareholder"),
+                new PartyLink(person, "40003000001", "beneficial_owner"),
+                new PartyLink(person, "40003000001", "officer"),
+                new PartyLink(person, "40003000001", "shareholder"),
+                new PartyLink(person, "40003000002", "beneficial_owner"),
+                new PartyLink(person, "40003000002", "officer"),
+                new PartyLink(person, "40003000002", "shareholder"));
+        assertThat(queries().rolesOfParties(List.of(person), 2)).hasSize(2);
+        assertThat(queries().rolesOfParties(List.of(), 10)).isEmpty();
+        assertThatIllegalArgumentException().isThrownBy(() -> queries().rolesOfParties(List.of(person), 0));
+    }
+
+    @Test
+    void rolesOfPartiesFollowTheLatestDocument() {
+        writer().upsertCompanies(Stream.of(company("40003000001", "SIA \"Alfa\"", D1)));
+        CompanyView noRoles = new CompanyView("40003000001", "SIA \"Alfa\"", "SIA", "LLC", "ACTIVE", Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), List.of(), D2);
+        writer().upsertCompanies(Stream.of(noRoles));
+
+        assertThat(queries().rolesOfParties(List.of(PartyLink.personKey("ab".repeat(32))), 10)).isEmpty();
+    }
+
     // ---- search ----
 
     private void searchFixture() {

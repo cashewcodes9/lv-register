@@ -12,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.List;
@@ -22,6 +23,7 @@ import lvregister.serving.CompanyView;
 import lvregister.serving.EventView;
 import lvregister.serving.FeatureView;
 import lvregister.serving.Page;
+import lvregister.serving.PartyLink;
 import lvregister.serving.RunView;
 import lvregister.serving.SearchHit;
 import lvregister.serving.StatView;
@@ -297,6 +299,49 @@ public final class PostgresServing implements ServingWriter, ServingQueries, Aut
                 try (ResultSet rs = ps.executeQuery()) {
                     return rs.next() ? Optional.of(JSON.readValue(rs.getString(1), CompanyView.class)) : Optional.empty();
                 }
+            }
+        });
+    }
+
+    @Override
+    public List<CompanyView> companies(Collection<String> regNumbers) {
+        if (regNumbers.isEmpty()) {
+            return List.of();
+        }
+        return withConnection(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT doc::text FROM companies WHERE reg_number = ANY (?)")) {
+                ps.setArray(1, conn.createArrayOf("text", regNumbers.toArray()));
+                List<CompanyView> found = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        found.add(JSON.readValue(rs.getString(1), CompanyView.class));
+                    }
+                }
+                return found;
+            }
+        });
+    }
+
+    @Override
+    public List<PartyLink> rolesOfParties(Collection<String> partyKeys, int limit) {
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        if (partyKeys.isEmpty()) {
+            return List.of();
+        }
+        return withConnection(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement("SELECT party_key, reg_number, role_kind FROM party_roles"
+                    + " WHERE party_key = ANY (?) ORDER BY party_key, reg_number, role_kind LIMIT ?")) {
+                ps.setArray(1, conn.createArrayOf("text", partyKeys.toArray()));
+                ps.setInt(2, limit);
+                List<PartyLink> links = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        links.add(new PartyLink(rs.getString(1), rs.getString(2), rs.getString(3)));
+                    }
+                }
+                return links;
             }
         });
     }
