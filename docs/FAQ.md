@@ -16,6 +16,9 @@ decision is written down. The plan is [PLAN.md](../PLAN.md), the design is
 - [How does the company network work, and is it a privacy problem?](#how-does-the-company-network-work-and-is-it-a-privacy-problem)
 - [Why was search slow on common words, and what fixed it?](#why-was-search-slow-on-common-words-and-what-fixed-it)
 - [Why shadcn/ui and not Semantic UI, which North Data uses?](#why-shadcnui-and-not-semantic-ui-which-north-data-uses)
+- [How is the frontend built, and how does it stay in sync with the API?](#how-is-the-frontend-built-and-how-does-it-stay-in-sync-with-the-api)
+- [Why do the colours look like North Data, but not the name?](#why-do-the-colours-look-like-north-data-but-not-the-name)
+- [Why does the network start so small?](#why-does-the-network-start-so-small)
 - [What are marts?](#what-are-marts)
 - [Why SeaweedFS, and why the AWS SDK if nothing runs on AWS?](#why-seaweedfs-and-why-the-aws-sdk-if-nothing-runs-on-aws)
 - [Why weekly captures, and how are captures dated?](#why-weekly-captures-and-how-are-captures-dated)
@@ -225,6 +228,46 @@ and Tailwind CSS) are copied into `web/src/components/ui`, so the repo owns ever
 what is used is shipped. Its charts are built on Recharts, used for the Overview page. The
 company network is drawn with **d3.js**, as at North Data. TypeScript stays on 5.9:
 TypeScript 7.0 is out, but `openapi-typescript`, which generates the API types, accepts only 5.x.
+
+## How is the frontend built, and how does it stay in sync with the API?
+
+Milestone 9. React 19 + TypeScript (Vite 8), shadcn/ui components, TanStack Query for every API
+call, Recharts (through shadcn charts) for the overview, d3.js for the network. Versions are
+pinned exactly with a committed lock file, and npm runs only in the Node 24 LTS container.
+
+The API contract is a file: `web/openapi.json`. A Java test fails when it differs from what the
+API serves (`make openapi` rewrites it), and the TypeScript types are generated from it on every
+build. A field the API changes is therefore a compile error in the frontend, not a runtime bug.
+The spec marks every field required and only `@Nullable` ones as `T | null`, so the types are
+exact (by default springdoc marks every field optional).
+
+TypeScript stays on 5.9: 7.0 is out, but `openapi-typescript` accepts only 5.x and
+`typescript-eslint` supports up to 6.0.
+
+A headless browser test (`make web-smoke`) opens every page against the running stack. It found
+two real problems during the milestone: the first page loads took up to 25 s right after a
+restart (cold JVM and database next to Dagster on one CPU; about 1 s once warm), and the
+network graph needed a layout computed up front, because d3's live simulation took over 4 s to
+settle on this CPU before it could zoom to fit.
+
+## Why do the colours look like North Data, but not the name?
+
+The owner asked for North Data's branding. The colours and fonts come from the stylesheet of
+northdata.de: teal `#007388` (their most used colour) as primary, their orange, muted red,
+green and blue for charts, Roboto for text. That shows the app was built to fit their product.
+
+The name and logo stay `lv-register`: using North Data's name or logo would make the app look
+like their product or imply they endorse it, which a reviewer there could read the wrong way.
+
+## Why does the network start so small?
+
+The full two-hop network of a busy company has a hundred nodes or more (the largest on the
+register: 46 companies and 59 people, capped by the API), which is unreadable at first sight.
+The page starts with level 1, the company and its people, and grows on demand: level 2 adds
+their other companies, level 3 the people of those companies. Toggles hide officers,
+shareholders or beneficial owners. One API call returns the full graph; the levels and toggles
+filter it in the browser (`filterNetwork`, unit-tested), so switching is instant, and the
+choice is in the URL, so a view can be shared.
 
 ## What are marts?
 

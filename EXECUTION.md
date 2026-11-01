@@ -5,7 +5,7 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 [PLAN.md](PLAN.md); decisions about the source are in
 [docs/source-assessment.md](docs/source-assessment.md).
 
-**Last updated:** 2026-11-01 · **Current milestone:** 9 (not started); 4 has two open real-data items
+**Last updated:** 2026-11-01 · **Current milestone:** 9 (in review, PR into `dev`); 4 has two open real-data items
 
 ## Status
 
@@ -19,7 +19,8 @@ the end of every work session and every milestone (see CLAUDE.md). The plan itse
 | 6. dbt | done 2026-11-01, merged into `dev` (PR #4, CI green) |
 | 7. Dagster orchestration | done 2026-11-01, merged into `dev` (PR #5, CI green) |
 | 8. Spring Boot API | done 2026-11-01, merged into `dev` (PR #6, CI green) |
-| 9–10 | not started |
+| 9. React frontend | done 2026-11-01 on `milestone/9-web` (PR into `dev`) |
+| 10 | not started |
 
 Git: Milestones 1 and 2 are pushed to `main`, and CI is green (runs 41231743537, 41232519585).
 `dev` was branched from `main` on 2026-10-31 and is the working branch from then on. Branch
@@ -247,14 +248,41 @@ board member removed; 47404003378: farm owner removed).
   193,000 names) 2.8 s uncached (6 s before the narrow table and broad ranking).
 - ROADMAP.md section 5: group module folders into shared / pipeline / api (owner: later).
 
-## Milestone 9: next steps, in order
+## What exists (Milestone 9)
 
-0. After the Milestone 8 PR is merged: `git switch dev && git pull && git switch -c milestone/9-web`.
-1. Read PLAN.md Milestone 9 and section 14. Ask the owner about versions (Node 22 LTS image,
-   Vite, React, TanStack Query, Recharts, the graph library) before adding them.
-2. `web/` with types generated from `/api/openapi.json`; `web-dev` service (profile dev);
-   Dockerfile stage `web`, Spring Boot serves `web/dist`.
-3. Search UI: debounce and at least 2 characters (very common words cost up to ~3 s uncached).
+- `web/`: React 19 + TypeScript 5.9 + Vite 8; shadcn/ui 4.23 (Radix, "Nova" preset) in
+  `src/components/ui`; TanStack Query hooks over an openapi-fetch client (`src/api`); pages
+  Overview, Search, Company, Network, Changes, Pipeline (+ run detail), Insights; helpers in
+  `src/lib` with Vitest tests (7). Routes lazy-loaded.
+- API contract: `web/openapi.json`, kept current by `ApiIntegrationTest` (`make openapi`);
+  `OpenApiConfig` marks DTO fields required and JSpecify `@Nullable` fields nullable;
+  `JsonNode` as free-form object. Types generated on every build (`src/api/schema.d.ts`,
+  git-ignored).
+- Network page: levels 1–3 and role toggles in the URL, `filterNetwork` in the browser; d3
+  layout computed up front (300 ticks) and zoomed to fit.
+- Look: North Data's colours from their `site.min.css` (teal `#007388`, `#de800d`, `#a35956`,
+  `#527b41`, `#5474d1`), Roboto + Roboto Mono (OFL, self-hosted); no North Data name or logo.
+- Production: Dockerfile stages `web` and `api-jar` (the cli image does not depend on the
+  frontend); `FrontendController` forwards client routes to `index.html`.
+- Compose: `web` (tools, npm as the host user) and `web-dev` (profile dev, :5173). Make:
+  `npm`, `web-check` (CI), `web-dev`, `web-smoke` (Playwright 1.64.1 in its container against
+  the running stack; screenshots in `.cache/screenshots`, never committed), `openapi`.
+- Real stack: every page renders with no console errors; about 1 s per page warm (up to 25 s
+  right after an API restart on the busy 1-CPU VM).
+- `npm audit`: 0 findings in production dependencies; 14 moderate in dev-only tooling (one
+  `minimatch` advisory via openapi-typescript and typescript-eslint); the offered fix would
+  downgrade typescript-eslint, so it is left.
+- CLAUDE.md: document everything in Markdown and write FAQ entries after every milestone.
+
+## Milestone 10: next steps, in order
+
+0. After the Milestone 9 PR is merged: `git switch dev && git pull && git switch -c milestone/10-polish`.
+1. Read PLAN.md Milestone 10. README: problem, architecture diagram, screenshots (frontend,
+   Dagster asset graph), run in under 5 commands, design decisions. Screenshots must not show
+   real person names: use synthetic data (the dbt fixtures or a demo company) or blur them;
+   ask the owner.
+2. Milestone 4 leftovers: the 2026-11-09 capture (Dagster's schedule takes it if the stack is
+   up) and the owner's spot-check of 5 events.
 
 ## Pinned versions
 
@@ -282,6 +310,14 @@ board member removed; 47404003378: farm owner removed).
 | springdoc-openapi | 3.2.0 | built against Boot 4.1.2 |
 | Bucket4j | 8.21.0 (`com.bucket4j:bucket4j_jdk17-core`) | `bucket4j-core` stopped at 8.10.1 |
 | Caffeine | 3.3.1 | Boot manages 3.2.4 |
+| Node image | node:24.22.2-alpine | LTS; npm 11.19.1 |
+| React / Vite / TypeScript | 19.3.1 / 8.3.5 / 5.9.3 | TypeScript 7.0 is out, but openapi-typescript needs 5.x and typescript-eslint < 6.1 |
+| shadcn (CLI) / radix-ui / Tailwind CSS | 4.23.0 / 1.8.1 / 4.3.3 | Radix base, Nova preset; `cn` 0.5.1 is shadcn's own class merger |
+| TanStack Query / React Router | 5.105.1 / 8.5.1 | |
+| Recharts / d3 | 3.10.1 / 7.9.0 | the shadcn chart component installed 3.8.0; set back to 3.10.1, works |
+| openapi-typescript / openapi-fetch | 7.13.0 / 0.17.0 | |
+| ESLint / typescript-eslint / Vitest | 10.14.0 / 8.72.1 / 5.0.5 | |
+| Playwright | 1.64.1 (image mcr.microsoft.com/playwright:v1.64.1-noble) | `make web-smoke` only |
 | PostgreSQL image | 18.6-alpine3.24 | 19 is still RC (2026-10-31) |
 | PostgreSQL JDBC / HikariCP / Flyway | 42.7.14 / 7.1.0 / 13.12.0 | `flyway-database-postgresql` 13.12.0 at runtime; works with PostgreSQL 18.6 |
 | testcontainers-postgresql | 2.0.5 | `org.testcontainers.postgresql.PostgreSQLContainer` |
@@ -362,3 +398,8 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | The API never migrates the serving schema; the index step owns it (V3/V4 were applied by running `index` once) |
 | 2026-11-01 | Module folders stay flat; grouping into shared / pipeline / api is on ROADMAP.md (owner) |
 | 2026-11-01 | Frontend UI: shadcn/ui (Radix + Tailwind) instead of a component library; Semantic UI dropped (unmaintained, no React 19); network graph in d3.js (owner) |
+| 2026-11-01 | Charts: shadcn charts (Recharts); network in d3.js (owner, option 1a); versions as proposed (owner did not object) |
+| 2026-11-01 | Frontend colours and fonts after North Data's site; no North Data name or logo (owner asked for their branding; name and logo left out to avoid looking like their product) |
+| 2026-11-01 | Network page starts at level 1 (company and its people), levels 2–3 and role toggles on demand, filtered in the browser (owner) |
+| 2026-11-01 | The overview's region chart was replaced by top legal forms: `region_code` is a VZD code without names in our data |
+| 2026-11-01 | `web/openapi.json` is the committed API contract; a Java test keeps it current, types are generated from it |

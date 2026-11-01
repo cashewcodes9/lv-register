@@ -178,7 +178,7 @@ project builds the same on any machine and in CI.
 | `build` | `eclipse-temurin:25-jdk` | runs the Gradle wrapper: `./gradlew build`, tests. Gradle cache in a named volume |
 | `cli` | `Dockerfile` target `cli` (JRE 25 + CLI jar) | runs pipeline steps; launched by Dagster or `docker compose run` |
 | `api` | `Dockerfile` target `api` (JRE 25 + Spring Boot jar with `web/dist`) | API and frontend on one port |
-| `web-dev` | `node:22` (LTS) | Vite dev server with hot reload; `npm` commands; `node_modules` in a named volume |
+| `web-dev` | `node:24.22.2-alpine` (LTS) | Vite dev server with hot reload (profile `dev`); `npm` commands run in the `web` tool service; `node_modules` in `web/` (git-ignored) |
 | `dagster-code` | `orchestration/Dockerfile` (Python, Dagster, dbt-duckdb, dbt project) | Dagster code location (gRPC); launches `cli` containers through the Docker socket |
 | `dagster-webserver` | same image | Dagster UI (:3000): asset graph, runs, backfills, checks |
 | `dagster-daemon` | same image | schedules, sensors, run queue, retries |
@@ -593,12 +593,12 @@ Design choices and measurements: [FAQ](docs/FAQ.md#how-is-the-api-built-and-why-
 ### Milestone 9: React frontend
 Why shadcn/ui and d3.js: [FAQ](docs/FAQ.md#why-shadcnui-and-not-semantic-ui-which-north-data-uses).
 
-- [ ] Vite + React + TypeScript app in `web/`
-- [ ] TypeScript types generated from the OpenAPI spec
-- [ ] All pages from section 14
-- [ ] Frontend lint + build in CI
-- [ ] `web-dev` compose service with hot reload against the API
-- [ ] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
+- [x] Vite + React + TypeScript app in `web/`
+- [x] TypeScript types generated from the OpenAPI spec
+- [x] All pages from section 14
+- [x] Frontend lint + build in CI
+- [x] `web-dev` compose service with hot reload against the API
+- [x] Spring Boot serves `web/dist` in production; `make up` starts the whole stack with one
       command
 
 ### Milestone 10: Polish

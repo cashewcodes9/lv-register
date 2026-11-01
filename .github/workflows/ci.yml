@@ -21,3 +21,5 @@ jobs:
         run: make dbt-fixtures
       - name: Dagster definitions, asset graph and checks (pytest, orchestration image)
         run: make dagster-test
+      - name: Frontend lock-file install, types, lint, tests and build (Node container)
+        run: make web-check
