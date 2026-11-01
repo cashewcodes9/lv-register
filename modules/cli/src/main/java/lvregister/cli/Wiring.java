@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import lvregister.diff.DiffStep;
 import lvregister.index.IndexStep;
+import lvregister.index.MartReader;
 import lvregister.ingest.CkanCatalog;
 import lvregister.ingest.Downloader;
 import lvregister.ingest.Http;
@@ -90,7 +91,8 @@ final class Wiring {
                     DuckDb db = DuckDb.open(DuckDbSettings.fromEnvironment(env), Optional.of(settings));
                     var serving = servingStore(env)) {
                 ObjectStore lake = lake(env, s3);
-                new IndexStep(lake, new SnapshotLoader(new LakeReader(db, lake)), serving).run(date);
+                ObjectStore marts = new S3ObjectStore(s3, bucket(env, "S3_BUCKET_MARTS", "lv-marts"));
+                new IndexStep(lake, new SnapshotLoader(new LakeReader(db, lake)), serving, new MartReader(db, marts)).run(date);
             }
         });
         return new Steps(steps);

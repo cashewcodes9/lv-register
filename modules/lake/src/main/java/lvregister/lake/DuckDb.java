@@ -63,6 +63,25 @@ public final class DuckDb implements AutoCloseable {
         }
     }
 
+    /** All rows of a query as maps from column name to text; NULL columns are left out. For small results. */
+    public java.util.List<java.util.Map<String, String>> queryRows(String sql) throws SQLException {
+        try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            var meta = rs.getMetaData();
+            java.util.List<java.util.Map<String, String>> rows = new java.util.ArrayList<>();
+            while (rs.next()) {
+                java.util.Map<String, String> row = new java.util.LinkedHashMap<>();
+                for (int i = 1; i <= meta.getColumnCount(); i++) {
+                    String value = rs.getString(i);
+                    if (value != null) {
+                        row.put(meta.getColumnName(i), value);
+                    }
+                }
+                rows.add(row);
+            }
+            return rows;
+        }
+    }
+
     Connection connection() {
         return connection;
     }
