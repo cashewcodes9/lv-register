@@ -1,0 +1,6 @@
+# The webserver and the daemon load the code location from the dagster-code gRPC server.
+load_from:
+  - grpc_server:
+      host: dagster-code
+      port: 4000
+      location_name: lv_register
