@@ -15,6 +15,7 @@ decision is written down. The plan is [PLAN.md](../PLAN.md), the design is
 - [How is the API built, and why these choices?](#how-is-the-api-built-and-why-these-choices)
 - [How does the company network work, and is it a privacy problem?](#how-does-the-company-network-work-and-is-it-a-privacy-problem)
 - [Why was search slow on common words, and what fixed it?](#why-was-search-slow-on-common-words-and-what-fixed-it)
+- [Why can a search still take 15 s, and what is planned?](#why-can-a-search-still-take-15-s-and-what-is-planned)
 - [Why shadcn/ui and not Semantic UI, which North Data uses?](#why-shadcnui-and-not-semantic-ui-which-north-data-uses)
 - [How is the frontend built, and how does it stay in sync with the API?](#how-is-the-frontend-built-and-how-does-it-stay-in-sync-with-the-api)
 - [Why do the colours look like North Data, but not the name?](#why-do-the-colours-look-like-north-data-but-not-the-name)
@@ -209,10 +210,23 @@ Measured on the real register: a search for "nams" took 6 s the first time. Two 
 2. **CPU.** "sabiedriba" (Latvian for "company") appears in 193,000 names. Ranking every
    match by trigram similarity costs seconds on one CPU. Fix: a query with more than 1,000
    substring matches is "broad": it returns the substring matches ranked exact name, prefix,
-   then shorter names, and computes similarity only for the page it returns.
+   then shorter names, and is meant to compute similarity only for the page it returns (a
+   later measurement showed it still computes it for every match; see the next entry).
 
 Now typical searches take 0.03–0.4 s, the commonest word about 2.8 s uncached, and results are
 cached for 10 minutes. The frontend waits for a pause in typing before it searches.
+
+## Why can a search still take 15 s, and what is planned?
+
+Measured on 2026-11-01 ([search-performance.md](search-performance.md)). No single search
+takes 15 s. A search on its own takes 0.03–1.5 s, except two-letter queries (up to 4.5 s cold).
+The 15 s builds up because the frontend starts a new search at every pause in typing and never
+cancels the old ones. They all share the one CPU, so the search you want waits behind them: a
+0.4 s query took 3–4.4 s that way. Broad queries also compute similarity for every match
+before keeping 20, and the VM is short on memory (swap in use). The fixes are in
+[ROADMAP.md section 7](../ROADMAP.md#7-search-performance): abort superseded requests, score
+only the returned page (2.6–4 times faster), a statement timeout, limits on concurrent searches,
+and more shared buffers.
 
 ## Why shadcn/ui and not Semantic UI, which North Data uses?
 
