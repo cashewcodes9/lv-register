@@ -53,3 +53,10 @@ telemetry:
 # Freshness policies (ur_raw_files: a capture at least every 8 days).
 freshness:
   enabled: true
+
+# Marks runs whose worker died (for example when dagster-code is recreated) as failed or
+# canceled, so they do not hold the single run slot.
+run_monitoring:
+  enabled: true
+  start_timeout_seconds: 300
+  cancel_timeout_seconds: 180
