@@ -13,7 +13,7 @@ class LegalFormsSeedTest {
 
     @Test
     void dbtSeedEqualsTheJavaTable() throws Exception {
-        Map<String, String> seed = Files.readAllLines(Path.of("../../transform/seeds/legal_forms.csv")).stream()
+        Map<String, String> seed = Files.readAllLines(Path.of("../../../transform/seeds/legal_forms.csv")).stream()
                 .skip(1)
                 .filter(line -> !line.isBlank())
                 .map(line -> line.split(","))

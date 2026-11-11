@@ -320,15 +320,18 @@ there.
 ## Project layout
 
 ```
-modules/            Java (Gradle subprojects)
-  domain/           records and sealed types, no I/O
-  storage/          ObjectStore: S3 and local implementations
-  ingest/ lake/ normalize/ diff/ quality/ index/    pipeline steps
-  serving/          the port: ServingWriter, ServingQueries, contract tests
-  serving-postgres/ the PostgreSQL adapter, Flyway migrations
-  pipes/            Dagster Pipes protocol for Java
-  cli/              Picocli commands, one per step
-  api/              Spring Boot 4 read API
+modules/              Java (Gradle subprojects), grouped by who uses them
+  shared/             used by the CLI and the API
+    domain/           records and sealed types, no I/O
+    serving/          the port: ServingWriter, ServingQueries, contract tests
+    serving-postgres/ the PostgreSQL adapter, Flyway migrations
+  pipeline/           used by the CLI only
+    storage/          ObjectStore: S3 and local implementations
+    ingest/ lake/ normalize/ diff/ quality/ index/    pipeline steps
+    pipes/            Dagster Pipes protocol for Java
+    cli/              Picocli commands, one per step
+  api/
+    api/              Spring Boot 4 read API
 transform/          dbt project: staging, intermediate, marts, fixtures
 orchestration/      Dagster definitions (Python), tests
 web/                React frontend

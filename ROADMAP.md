@@ -183,10 +183,11 @@ trigram matching: relevance tuning, facets, synonyms, or much more data and traf
 
 ## 5. Module folders grouped by who uses them
 
-Today every Java module sits flat under `modules/`. Gradle dependencies and the ArchUnit tests
-already enforce the boundaries (the API reads only through the `serving` port and never
-touches the pipeline), so this is about making the structure visible at a glance, not about
-correctness. Raised by the owner on 2026-11-01; kept for later.
+Done on 2026-11-11 ([#14](https://github.com/cashewcodes9/lv-register/issues/14)). Until
+then every Java module sat flat under `modules/`. Gradle dependencies and the ArchUnit tests
+already enforced the boundaries (the API reads only through the `serving` port and never
+touches the pipeline), so this makes the structure visible at a glance; it does not change
+correctness. Raised by the owner on 2026-11-01.
 
 ```
 modules/
@@ -196,11 +197,13 @@ modules/
   api/        api                                        Spring Boot read API
 ```
 
-- [ ] Move the directories; Gradle project names (`:domain`, `:cli`, ...) stay, only the
+- [x] Move the directories; Gradle project names (`:domain`, `:cli`, ...) stay, only the
       `projectDir` mapping in `settings.gradle.kts` changes
-- [ ] Update paths in the Makefile (`dagster-test` mounts `Checks.java`), docs and README
-- [ ] Optional: an ArchUnit or Gradle rule that `api` depends on `shared` modules only
-- [ ] Its own small PR, with no other changes, so the moves are easy to review
+- [x] Update paths in the Makefile (`dagster-test` mounts `Checks.java`), the Dockerfile,
+      tests that read repository files through `../../`, docs and README
+- [x] Optional: a Gradle rule that `api` depends on `shared` modules only
+      (`modules/api/api/build.gradle.kts`, checked when the build is configured)
+- [x] Its own small PR, with no other changes, so the moves are easy to review
 
 ## 6. Companies by region, with names
 

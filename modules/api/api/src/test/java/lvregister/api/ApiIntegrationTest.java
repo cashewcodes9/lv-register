@@ -110,7 +110,7 @@ class ApiIntegrationTest {
         java.util.Map<?, ?> spec = json.readValue(served, java.util.LinkedHashMap.class);
         spec.remove("servers");
         String normalized = json.writeValueAsString(spec) + "\n";
-        java.nio.file.Path file = java.nio.file.Path.of("../../web/openapi.json");
+        java.nio.file.Path file = java.nio.file.Path.of("../../../web/openapi.json");
         if ("1".equals(System.getenv("LV_WRITE_OPENAPI"))) {
             java.nio.file.Files.writeString(file, normalized);
         }
