@@ -31,7 +31,7 @@ RUN mkdir -p /opt/duckdb/extensions/v${DUCKDB_VERSION}/linux_amd64 \
 FROM eclipse-temurin:25.0.5_8-jre-noble AS cli
 # Non-root runtime user (the image's `ubuntu` user has uid 1000; use a separate one).
 RUN useradd --system --uid 10001 --no-create-home lvregister
-COPY --from=jdk /src/modules/cli/build/install/lv-register /opt/lv-register
+COPY --from=jdk /src/modules/pipeline/cli/build/install/lv-register /opt/lv-register
 COPY --from=duckdb-extensions /opt/duckdb /opt/duckdb
 ENV DUCKDB_EXTENSION_DIRECTORY=/opt/duckdb/extensions \
     DUCKDB_TEMP_DIRECTORY=/tmp/duckdb \
@@ -52,7 +52,7 @@ RUN --mount=type=cache,target=/root/.gradle \
 # The read API (Spring Boot) with the frontend. Production target.
 FROM eclipse-temurin:25.0.5_8-jre-noble AS api
 RUN useradd --system --uid 10001 --no-create-home lvregister
-COPY --from=api-jar /src/modules/api/build/libs/api-0.1.0-SNAPSHOT.jar /opt/lv-register/api.jar
+COPY --from=api-jar /src/modules/api/api/build/libs/api-0.1.0-SNAPSHOT.jar /opt/lv-register/api.jar
 USER lvregister
 WORKDIR /tmp
 EXPOSE 8080
