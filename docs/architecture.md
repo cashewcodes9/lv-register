@@ -385,6 +385,8 @@ and alerts come later ([ROADMAP.md](../ROADMAP.md), section 1).
 - **Health:** Actuator health for the API with a database indicator; healthchecks on
   every compose service.
 - **Pipeline page:** the frontend shows run history and quality reports from the `runs` table.
+- **When a run fails:** [runbook-failed-runs.md](runbook-failed-runs.md) says where each log
+  lives, the steps to find the cause, the tools for each layer, and the incident log.
 
 **Personal data:** logs and Dagster metadata carry registration numbers and counts only,
 never person names or keys. A test runs the CLI on a fixture and scans its log output.

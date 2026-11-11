@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 424" role="img" aria-labelledby="title desc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13">
+  <title id="title">Every run executes in dagster-code; its evidence sits in three places</title>
+  <desc id="desc">dagster-daemon launches runs in dagster-code. Java steps write compute logs to the dagster-storage volume, dbt writes its logs to /tmp/dbt/target inside dagster-code, and run events go to the dagster database in postgres, which the webserver UI reads.</desc>
+  <style>
+    .bg { fill: #ffffff; }
+    .ink { fill: #1f2328; }
+    .quiet { fill: #59636e; }
+    .edge { stroke: #8c959f; }
+    .box { fill: none; stroke: #8c959f; stroke-width: 1.25; }
+    .tint { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.25; }
+    .accent { fill: #ddf4ff; stroke: #0969da; stroke-width: 2; }
+    .arrowhead { fill: #8c959f; }
+    .name { font-weight: 600; }
+    .small { font-size: 11.5px; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .ink { fill: #e6edf3; }
+      .quiet { fill: #9198a1; }
+      .edge, .box { stroke: #6e7681; }
+      .tint { fill: #161b22; stroke: #6e7681; }
+      .accent { fill: #0c2d6b; stroke: #4493f8; }
+      .arrowhead { fill: #6e7681; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arrowhead" d="M0 0L10 5L0 10z"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="760" height="424"/>
+  <text class="ink name" x="24" y="32" font-size="15">Every run executes in dagster-code; its evidence sits in three places</text>
+
+  <rect class="box" x="24" y="56" width="216" height="72" rx="8"/>
+  <text class="ink name" x="40" y="80">dagster-webserver</text>
+  <text class="quiet small" x="40" y="96">UI on 127.0.0.1:3000</text>
+  <text class="quiet small" x="40" y="112">reads runs from postgres</text>
+
+  <rect class="box" x="260" y="56" width="216" height="72" rx="8"/>
+  <text class="ink name" x="276" y="80">dagster-daemon</text>
+  <text class="quiet small" x="276" y="96">weekly schedule, sensors</text>
+  <text class="quiet small" x="276" y="112">run queue, one run at a time</text>
+
+  <rect class="box" x="496" y="56" width="216" height="72" rx="8"/>
+  <text class="ink name" x="512" y="80">postgres (dagster db)</text>
+  <text class="quiet small" x="512" y="96">runs, event logs,</text>
+  <text class="quiet small" x="512" y="112">asset check results</text>
+
+  <rect class="tint" x="24" y="168" width="688" height="136" rx="8"/>
+  <text class="ink name" x="40" y="190">dagster-code: runs execute here</text>
+
+  <rect class="box" x="40" y="200" width="320" height="88" rx="8"/>
+  <text class="ink name" x="56" y="224">Java steps (cli containers, Pipes)</text>
+  <text class="quiet small" x="56" y="240">download, lake, diff, quality, index, prune</text>
+  <text class="ink small" x="56" y="256">logs: /opt/dagster/storage/logs/</text>
+  <text class="ink small" x="56" y="272">RUN_ID/compute_logs/*.out, *.err</text>
+
+  <rect class="accent" x="376" y="200" width="320" height="88" rx="8"/>
+  <text class="ink name" x="392" y="224">dbt build in DuckDB</text>
+  <text class="quiet small" x="392" y="240">DUCKDB_MEMORY_LIMIT (1 GB), 1 thread</text>
+  <text class="ink small" x="392" y="256">logs: /tmp/dbt/target/dbt_models-RUN/</text>
+  <text class="ink small" x="392" y="272">dbt.log, run_results.json, compiled/</text>
+
+  <rect class="box" x="24" y="344" width="688" height="56" rx="8"/>
+  <text class="ink name" x="40" y="368">lake (SeaweedFS, S3 API)</text>
+  <text class="quiet small" x="40" y="384">lv-raw (CSV) · lv-lake (Parquet, one folder per capture, 12 kept) · lv-marts</text>
+
+  <g class="edge" fill="none" stroke-width="1.25">
+    <path d="M368 128V168" marker-end="url(#arrow)"/>
+    <path d="M604 168V128" marker-end="url(#arrow)"/>
+    <path d="M200 288V344" marker-end="url(#arrow)"/>
+    <path d="M536 288V344" marker-end="url(#arrow)"/>
+  </g>
+  <text class="quiet small" x="376" y="152">launches runs</text>
+  <text class="quiet small" x="612" y="152">writes events</text>
+  <text class="quiet small" x="208" y="328">writes snapshots, events</text>
+  <text class="quiet small" x="544" y="328">reads lake, writes marts</text>
+</svg>

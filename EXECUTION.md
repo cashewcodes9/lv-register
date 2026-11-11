@@ -274,6 +274,15 @@ board member removed; 47404003378: farm owner removed).
   downgrade typescript-eslint, so it is left.
 - CLAUDE.md: document everything in Markdown and write FAQ entries after every milestone.
 
+## Open incident: dbt OOM (2026-11-09)
+
+Capture 2026-11-09 failed in `dbt_models` with DuckDB OOM (issue #17, branch
+`17-dbt-oom-captures`); cause and proposed fixes in
+[docs/runbook-failed-runs.md](docs/runbook-failed-runs.md#incident-log). Nothing in the code
+is changed yet; the owner decides on the fix. Committed on the branch (2026-11-11):
+`docs/runbook-failed-runs.md`, `docs/images/run-evidence.svg`, a link in
+`docs/architecture.md` (Logging and monitoring).
+
 ## Milestone 10: next steps, in order
 
 0. Branch `milestone/10-polish` exists (README, demo GIF in `docs/images/demo.gif`, marts FAQ). Open from
