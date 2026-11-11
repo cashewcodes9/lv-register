@@ -83,7 +83,7 @@ capture-on:
 dagster-test:
 	$(COMPOSE) --profile core --profile tools build dbt
 	docker run --rm -w /work/orchestration \
-	  -v $(CURDIR)/modules/quality/src/main/java/lvregister/quality/Checks.java:/work/contract/Checks.java:ro \
+	  -v $(CURDIR)/modules/pipeline/quality/src/main/java/lvregister/quality/Checks.java:/work/contract/Checks.java:ro \
 	  lv-register/orchestration:dev python -m pytest -q -p no:cacheprovider tests
 
 ## Rewrite web/openapi.json from the API (the frontend types are generated from it)

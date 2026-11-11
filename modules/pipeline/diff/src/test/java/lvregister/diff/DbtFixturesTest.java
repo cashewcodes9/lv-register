@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class DbtFixturesTest {
 
-    private static final Path COMMITTED = Path.of("../../transform/fixtures/lake");
+    private static final Path COMMITTED = Path.of("../../../transform/fixtures/lake");
 
     @TempDir
     Path tmp;

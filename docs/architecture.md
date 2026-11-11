@@ -150,6 +150,18 @@ the same bytes and the same id.
 
 ## Java modules
 
+Module folders are grouped by who uses them; Gradle project names stay flat (`:domain`,
+`:cli`, ...), only `projectDir` in `settings.gradle.kts` points into the group:
+
+| Folder | Modules | Used by |
+|---|---|---|
+| `modules/shared/` | `domain`, `serving`, `serving-postgres` | the CLI and the API |
+| `modules/pipeline/` | `storage`, `ingest`, `lake`, `normalize`, `diff`, `quality`, `index`, `pipes`, `cli` | the CLI only |
+| `modules/api/` | `api` | the Spring Boot read API |
+
+`modules/api/api/build.gradle.kts` fails the build if `api` depends on a module outside
+`modules/shared/`. Why this grouping: [FAQ](FAQ.md#why-are-the-module-folders-grouped-by-who-uses-them).
+
 ```
    ┌──────────── cli (Picocli, manual wiring) ─────┐
    ▼        uses every pipeline module             ▼
@@ -435,7 +447,7 @@ Loads are upserts. A company row is only written when its content hash (the docu
 writes nothing and an older capture never rolls back a newer one. On the real data the first
 capture writes 489,963 companies (3.5 min); the next one writes only the 4 that changed.
 
-**API** (`modules/api`, Spring Boot 4.1.2, read-only, `http://localhost:8080/api`; Swagger UI
+**API** (`modules/api/api`, Spring Boot 4.1.2, read-only, `http://localhost:8080/api`; Swagger UI
 at `/api/docs`, spec at `/api/openapi.json`): the endpoints in PLAN.md section 13.
 
 | Endpoint | Returns |

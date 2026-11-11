@@ -24,6 +24,7 @@ decision is written down. The plan is [PLAN.md](../PLAN.md), the design is
 - [Why are the overview and insights pages fast, when the database holds 490,000 companies?](#why-are-the-overview-and-insights-pages-fast-when-the-database-holds-490000-companies)
 - [Why SeaweedFS, and why the AWS SDK if nothing runs on AWS?](#why-seaweedfs-and-why-the-aws-sdk-if-nothing-runs-on-aws)
 - [Why weekly captures, and how are captures dated?](#why-weekly-captures-and-how-are-captures-dated)
+- [Why are the module folders grouped by who uses them?](#why-are-the-module-folders-grouped-by-who-uses-them)
 
 ## What does each part of the stack do?
 
@@ -168,7 +169,7 @@ If memory gets tight, the lever is the `diff` step (two full snapshots), not Dag
 ## How is the API built, and why these choices?
 
 Milestone 8, decided 2026-11-01. Spring Boot 4.1.2 (the latest GA; 4.2 was only a release
-candidate), only in `modules/api`. The pipeline stays plain Java.
+candidate), only in `modules/api/api`. The pipeline stays plain Java.
 
 | Choice | Why |
 |---|---|
@@ -377,3 +378,20 @@ A capture's date is its **Riga date**. A capture taken in the evening after publ
 the next date only after 22:00 UTC (midnight in Riga in winter). The diff always compares a
 capture with the **previous capture in the lake**, so gaps are fine, and each event records
 both dates. Daily captures are added only if a week turns out to give too little data.
+
+## Why are the module folders grouped by who uses them?
+
+Decided 2026-11-01, done 2026-11-11 ([#14](https://github.com/cashewcodes9/lv-register/issues/14)).
+The 13 Java modules sat flat under `modules/`. They are now grouped into `shared/`
+(`domain`, `serving`, `serving-postgres`: used by the CLI and the API), `pipeline/` (the steps
+and the CLI) and `api/` (the Spring Boot read API).
+
+| Choice | Why |
+|---|---|
+| Group by consumer, not by business area | the real boundary in this project is "pipeline writes, API reads through the port"; companies, roles and events cross every step, so domain folders would split nothing |
+| Gradle project names stay flat (`:domain`, `:cli`) | `make gradle ARGS=":storage:test"`, CI and the Dockerfile tasks keep working; only `projectDir` changes |
+| A Gradle check on `api` in addition to ArchUnit | ArchUnit checks classes; the folder rule is about module dependencies, so it is checked where they are declared |
+| `git mv` in a PR with no other changes | `git log --follow` keeps the history and the review is only renames plus a few paths |
+
+Rejected: one folder per business area (see above), and renaming the Gradle projects to
+`:shared:domain` etc. (every command, CI step and doc would change for no gain).

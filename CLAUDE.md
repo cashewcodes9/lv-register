@@ -44,7 +44,7 @@ React frontend. Follow [PLAN.md](PLAN.md) milestone by milestone.
   docs/architecture.md (owner, 2026-11-01).
 - Small commits with clear messages.
 - Never commit raw data, lake files, marts or person-level data.
-- Never add Spring dependencies outside `modules/api`.
+- Never add Spring dependencies outside `modules/api/api`.
 - Keep domain logic in Java. Python in `orchestration/` only wires and checks; dbt models
   stay SQL over the lake.
 - If the real data contradicts this plan, tell me and propose a change. Do not silently work
@@ -55,7 +55,7 @@ React frontend. Follow [PLAN.md](PLAN.md) milestone by milestone.
 
 Do not reopen these without asking:
 - Java 25, Gradle Kotlin DSL, Picocli; plain Java in the pipeline.
-- Spring Boot 4 (not 3.x), only in `modules/api`.
+- Spring Boot 4 (not 3.x), only in `modules/api/api`.
 - Dagster + dbt stay; Python only for orchestration.
 - SeaweedFS (S3 API) for raw files, lake and marts; DuckDB over Parquet. The architecture
   follows [Oversee](https://github.com/cashewcodes9/Oversee).
