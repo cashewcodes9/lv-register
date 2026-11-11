@@ -25,6 +25,20 @@ dependencies {
     testImplementation(libs.archunit)
 }
 
+// Folder rule (ROADMAP.md section 5): the API depends on modules under modules/shared only,
+// never on a pipeline module. Checked when the build is configured.
+afterEvaluate {
+    val shared = rootDir.resolve("modules/shared")
+    configurations.flatMap { it.dependencies.withType<ProjectDependency>() }
+        .map { it.path }
+        .distinct()
+        .forEach { path ->
+            check(project(path).projectDir.startsWith(shared)) {
+                "api must depend on modules/shared only, but depends on $path (${project(path).projectDir})"
+            }
+        }
+}
+
 // The plain jar is not needed; bootJar is the deliverable (Dockerfile target `api`).
 tasks.jar { enabled = false }
 
