@@ -34,6 +34,17 @@ React frontend. Follow [PLAN.md](PLAN.md) milestone by milestone.
   steps. When the milestone builds green (`make build`), push the branch and open a PR into
   `dev`; once CI on the PR is green, merge it (merge commit) and summarize it to me. Never
   commit directly to `main`; `dev` goes to `main` only when I ask, through a PR.
+- Issues: every problem, bug, incident or change we discuss outside a milestone gets a GitHub
+  issue first, then its own branch (owner, 2026-11-11; the flow of #14). See PLAN.md
+  section 17.1 for the steps. In short:
+  1. `gh issue create`: Summary, Cause (for a bug), Tasks as `- [ ]`, Acceptance. Label
+     `bug`, `enhancement` or `documentation`.
+  2. Branch from an up-to-date `dev`, named `<issue number>-<short-name>` (e.g.
+     `14-group-module-folders`).
+  3. Small commits, each ending with `Refs #<n>`.
+  4. PR into `dev` with `Closes #<n>`, a "How to review" list of the commits and a
+     "Verified locally" list (what ran, what only CI runs). Merge with a merge commit
+     once CI is green, then tick the issue's tasks.
 - After each milestone: run `make build` (plus `make dbt-build` from Milestone 6 and the
   frontend build from Milestone 9 on), summarize what changed, and tick the checkboxes in
   PLAN.md.

@@ -656,3 +656,30 @@ After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch i
 - If the real data contradicts this plan, tell me and propose a change. Do not silently work
   around it.
 - Prefer simple code over clever code. If a library choice is unclear, ask me.
+
+### 17.1 Issues and branches for work outside a milestone
+
+Every problem, bug, incident or change we discuss that is not part of a milestone is tracked
+as a GitHub issue and done on its own branch (owner, 2026-11-11). The first was #14 (module
+folders → branch `14-group-module-folders` → PR #15 into `dev` → release PR #16).
+
+1. **Issue.** `gh issue create` with:
+   - **Summary:** what is wrong or wanted, in two or three sentences
+   - **Cause** (bugs and incidents): evidence and numbers, never person data
+   - **Tasks:** `- [ ]` items, small enough for one commit each
+   - **Acceptance:** the commands or checks that prove it is done
+   - a label: `bug`, `enhancement` or `documentation`
+2. **Branch** from an up-to-date `dev` (`git fetch`, branch from `origin/dev`), named
+   `<issue number>-<short-name>`.
+3. **Commits:** small, one task each, each message ending with `Refs #<n>`.
+4. **PR into `dev`** with `Closes #<n>` and:
+   - **How to review:** the commits in order, one line each
+   - **Verified locally:** what ran (`make build`, `make dbt-fixtures`, …) and what only CI runs
+5. **Merge** with a merge commit once CI is green, then tick the issue's tasks. `dev` goes to
+   `main` only when the owner asks (a release PR, like #16).
+6. **Docs** as for a milestone: architecture.md, an EXECUTION.md decision row, a FAQ entry if
+   something was decided.
+
+Incidents also get a row in the incident log of
+[docs/runbook-failed-runs.md](docs/runbook-failed-runs.md#incident-log), with the issue
+number.
