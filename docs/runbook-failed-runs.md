@@ -29,6 +29,10 @@ at each level before you change anything. Commands run from the repo root on the
 tool runs in a container. In the commands below, `$C` stands for
 `docker exec -e DAGSTER_HOME=/opt/dagster/home lv-register-dagster-code-1`.
 
+**Clocks:** the containers, `dbt.log`, `run_results.json` and `make status` use UTC, while
+the VM's shell (`date`) shows CET/CEST. Before you call a step slow or stuck, compare
+times in one zone: `date -u` on the host.
+
 1. **Stop the bleeding.** One run at a time (`max_concurrent_runs: 1`), so a stuck run blocks
    the next weekly capture (Mondays 06:00 Riga). Decide whether to cancel it. If the next
    capture would fail the same way, `make capture-off`.
