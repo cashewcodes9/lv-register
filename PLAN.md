@@ -267,21 +267,24 @@ lv-register/
   docker-compose.yml          services and profiles from section 6.1
   Makefile                    wrappers around docker compose
   .env.example
-  modules/
-    domain/       records, sealed types, no I/O, no dependencies
-    storage/      S3 object store for SeaweedFS (AWS SDK v2 as protocol client) and local directory
-    ingest/       download, sha256 manifest, raw cache
-    lake/         Parquet snapshots via DuckDB JDBC (httpfs)
-    normalize/    lake rows -> domain, legal form + status mapping, dropped-row counts
-    diff/         snapshot comparison -> events, deterministic event ids
-    quality/      run record, quality report
-    index/        indexing step: loads companies, events, runs and marts through `ServingWriter`
-    serving/      serving port: `ServingWriter`, `ServingQueries`, read records, contract tests
-    serving-postgres/  PostgreSQL adapter: plain JDBC, Flyway migrations, `pg_trgm` search
-    pipes/        Dagster Pipes messages from the CLI (materializations, checks, logs)
-    cli/          Picocli commands, Main with manual wiring
-    api/          Spring Boot read API under /api: controllers, DTO records, Bucket4j rate limit,
-                  CORS for Vite dev server, Actuator, OpenAPI, serves web/dist in production
+  modules/        grouped by who uses them (ROADMAP.md section 5); Gradle names stay flat
+    shared/       used by the CLI and the API
+      domain/       records, sealed types, no I/O, no dependencies
+      serving/      serving port: `ServingWriter`, `ServingQueries`, read records, contract tests
+      serving-postgres/  PostgreSQL adapter: plain JDBC, Flyway migrations, `pg_trgm` search
+    pipeline/     used by the CLI only
+      storage/      S3 object store for SeaweedFS (AWS SDK v2 as protocol client) and local directory
+      ingest/       download, sha256 manifest, raw cache
+      lake/         Parquet snapshots via DuckDB JDBC (httpfs)
+      normalize/    lake rows -> domain, legal form + status mapping, dropped-row counts
+      diff/         snapshot comparison -> events, deterministic event ids
+      quality/      run record, quality report
+      index/        indexing step: loads companies, events, runs and marts through `ServingWriter`
+      pipes/        Dagster Pipes messages from the CLI (materializations, checks, logs)
+      cli/          Picocli commands, Main with manual wiring
+    api/
+      api/          Spring Boot read API under /api: controllers, DTO records, Bucket4j rate limit,
+                    CORS for Vite dev server, Actuator, OpenAPI, serves web/dist in production
   orchestration/  Python project: Dagster definitions (assets, checks, jobs, schedules,
                   sensors), Dockerfile, pytest tests
   transform/      dbt project: sources, staging, intermediate, marts, tests, exposures
@@ -582,7 +585,7 @@ Why Dagster, and its cost: [FAQ](docs/FAQ.md#what-does-dagster-add).
 ### Milestone 8: Spring Boot API
 Design choices and measurements: [FAQ](docs/FAQ.md#how-is-the-api-built-and-why-these-choices).
 
-- [x] Spring Boot 4 app in `modules/api`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
+- [x] Spring Boot 4 app in `modules/api/api`; reads only through `ServingQueries` (adapter chosen by `SERVING_BACKEND`)
 - [x] All endpoints from section 13
 - [x] DTO records, validation, paging, ProblemDetail errors
 - [x] Bucket4j rate limit, CORS for Vite dev server
@@ -647,7 +650,7 @@ After the MVP: [ROADMAP.md](ROADMAP.md) (observability first, then the stretch i
   this file.
 - Small commits with clear messages.
 - Never commit raw data, lake files, marts or person-level data.
-- Never add Spring dependencies outside `modules/api`.
+- Never add Spring dependencies outside `modules/api/api`.
 - Keep domain logic in Java. Python in `orchestration/` only wires and checks; dbt models
   stay SQL over the lake.
 - If the real data contradicts this plan, tell me and propose a change. Do not silently work

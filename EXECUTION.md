@@ -246,7 +246,7 @@ board member removed; 47404003378: farm owner removed).
 - Real data: all endpoints answer; API about 200 MB; network of the busiest party 0.05 s
   (105 nodes, truncated); search typical 0.03–0.4 s, the commonest word ("sabiedriba",
   193,000 names) 2.8 s uncached (6 s before the narrow table and broad ranking).
-- ROADMAP.md section 5: group module folders into shared / pipeline / api (owner: later).
+- ROADMAP.md section 5: group module folders into shared / pipeline / api (done 2026-11-11, issue #14).
 
 ## What exists (Milestone 9)
 
@@ -406,7 +406,7 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | Network data: `party_roles` derived from the company documents by a trigger (the writer is unchanged); graph built in plain Java (`NetworkBuilder`) through the port |
 | 2026-11-01 | Search on a narrow `company_search` table; queries with more than 1,000 substring matches are ranked exact, prefix, shorter names (no trigram similarity over every match) |
 | 2026-11-01 | The API never migrates the serving schema; the index step owns it (V3/V4 were applied by running `index` once) |
-| 2026-11-01 | Module folders stay flat; grouping into shared / pipeline / api is on ROADMAP.md (owner) |
+| 2026-11-01 | Module folders stay flat; grouping into shared / pipeline / api is on ROADMAP.md (owner). Superseded 2026-11-11, see below |
 | 2026-11-01 | Frontend UI: shadcn/ui (Radix + Tailwind) instead of a component library; Semantic UI dropped (unmaintained, no React 19); network graph in d3.js (owner) |
 | 2026-11-01 | Charts: shadcn charts (Recharts); network in d3.js (owner, option 1a); versions as proposed (owner did not object) |
 | 2026-11-01 | Frontend colours and fonts after North Data's site; no North Data name or logo (owner asked for their branding; name and logo left out to avoid looking like their product) |
@@ -415,3 +415,4 @@ Use `repo1.maven.org/.../maven-metadata.xml` for version lookups: the
 | 2026-11-01 | `web/openapi.json` is the committed API contract; a Java test keeps it current, types are generated from it |
 | 2026-11-01 | Search at about 15 s in the frontend: measured (docs/search-performance.md), fixes planned in ROADMAP.md section 7; no code change yet |
 | 2026-11-01 | Demo GIF: real person names pixelated before committing (CLAUDE.md screenshot rule; public register data, but data minimisation and the CJEU 2022 ruling on beneficial-owner access). The unblurred upload on `main` (`lv-register-demo.gif`) is still there: owner decides whether to remove it (stays in git history unless main is rewritten) |
+| 2026-11-11 | Module folders grouped into `modules/shared` (domain, serving, serving-postgres), `modules/pipeline` (steps, pipes, cli) and `modules/api` (api); Gradle names unchanged, `api` may depend on `shared` only (Gradle check). Issue #14, branch `14-group-module-folders` (owner asked for issue-numbered branch names for issue work). Paths in older sections above are from before the move |
